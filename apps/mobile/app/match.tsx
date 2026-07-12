@@ -411,14 +411,15 @@ export default function Match() {
   const scrollRef = useRef<ScrollView>(null);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   useEffect(() => {
-    // Android: manual pad (resize mode). iOS: ScrollView auto insets only — no stacked avoiders.
+    // Android: pad by keyboard height (softwareKeyboardLayoutMode=resize).
+    // iOS: KeyboardAvoidingView handles lift — only track open/close for gap + scroll.
     const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
     const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
     const show = Keyboard.addListener(showEvent, event => {
       setKeyboardHeight(event.endCoordinates.height);
-      if (Platform.OS === "android") {
-        requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
-      }
+      requestAnimationFrame(() => {
+        setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), Platform.OS === "ios" ? 50 : 0);
+      });
     });
     const hide = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
     return () => {
@@ -427,20 +428,26 @@ export default function Match() {
     };
   }, []);
   const keyboardGap = 10;
-  // iOS: only a small gap — auto keyboard insets already shift the scroll view.
-  // Android: full keyboard height pad so the field sits above the keyboard.
+  // iOS: KAV already shrinks the view — keep only a small gap so the field isn't glued to keys.
+  // Android: full keyboard height pad under the field.
   const pagePadBottom = Platform.OS === "ios"
-    ? (keyboardHeight > 0 ? keyboardGap + 16 : 40)
+    ? (keyboardHeight > 0 ? keyboardGap : 40)
     : Math.max(40, keyboardHeight > 0 ? keyboardHeight + keyboardGap - insets.bottom : 40);
 
-  return <SafeAreaView style={[styles.safe, { backgroundColor: pitchTheme.background }]}>
-    <KeyboardAvoidingView style={styles.keyboard} behavior={undefined} enabled={false}>
+  return <SafeAreaView edges={["top", "left", "right"]} style={[styles.safe, { backgroundColor: pitchTheme.background }]}>
+    <KeyboardAvoidingView
+      style={styles.keyboard}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      // SafeArea top already applied; keep offset modest so iOS doesn't overshoot.
+      keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}
+      enabled={Platform.OS === "ios"}
+    >
     <ScrollView
       ref={scrollRef}
       contentContainerStyle={[styles.page, { paddingBottom: pagePadBottom }]}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
-      automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
+      automaticallyAdjustKeyboardInsets={false}
     >
       <View pointerEvents="none" style={[styles.pitchAtmosphere, { borderColor: pitchTheme.line, backgroundColor: pitchTheme.haze }]}><View style={[styles.atmosphereCircle, { borderColor: pitchTheme.line }]} /><View style={[styles.atmosphereHalf, { backgroundColor: pitchTheme.line }]} /></View>
       <View style={styles.topbar}>
