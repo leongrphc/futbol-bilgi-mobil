@@ -10,8 +10,6 @@ Free libraries remapped into `apps/mobile/assets/sfx/*.wav`.
 
 | Game slot | Source file |
 |---|---|
-| correct | confirmation_002.ogg |
-| wrong | error_006.ogg |
 | tick | toggle_001.ogg |
 | emote | pluck_001.ogg |
 | sudden_death | highDown.ogg |
@@ -25,5 +23,7 @@ Free libraries remapped into `apps/mobile/assets/sfx/*.wav`.
 - whistle ← **Police short whistle** (preview id 615)
 - lobby_loop ← **Game show fun suspense** (preview id 942)
 - tab ← **Modern technology select** (preview id 3124)
+- correct ← **Correct positive notification** (preview id 957)
+- wrong ← **Game show wrong answer buzz** (preview id 950)
 
 Swap files anytime; keep filenames stable for the app `require()` map.
