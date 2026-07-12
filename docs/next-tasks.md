@@ -2,6 +2,16 @@
 
 Güncel durum matrisi: [implementation-status.md](implementation-status.md)
 
+## Phase 1–3 (kodlandı)
+
+1. Phase 1 album/quests prod migration uygulandı
+2. Phase 2 sudden-death/commentator/share client-only
+3. Phase 3 tutorial bot path; solo daily kaldırıldı (`20260713190000_drop_solo_daily.sql`)
+
+Smoke: lobby tutorial kartı, bot/tutorial 3 şıklı cevap
+
+Detay: [feature-roadmap.md](feature-roadmap.md)
+
 ## P0 — MVP'yi ürünleştirme
 
 1. İki cihazlı Worker persistence smoke testi ve korelasyon logları

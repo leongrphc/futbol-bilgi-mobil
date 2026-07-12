@@ -3,6 +3,12 @@ import type { EngineRules } from "@football-link/game-engine";
 
 export interface MatchRules extends EngineRules { teamPoolSize: number; selectionMs: number; answerMs: number; revealMs: number; reconnectMs: number; suddenDeathMinAnswers: number }
 const defaultRules: MatchRules = { teamPoolSize: 6, selectionMs: 20_000, answerMs: 15_000, revealMs: 4_000, reconnectMs: 60_000, suddenDeathMinAnswers: 1, winningScore: 3, maximumRounds: 9 };
+/** Blitz: short timers, first to 2, separate trophy ladder on finish. */
+export const blitzRules: Partial<MatchRules> = { selectionMs: 12_000, answerMs: 8_000, revealMs: 3_000, winningScore: 2, maximumRounds: 5, teamPoolSize: 6 };
+export function applyMatchModeRules(base: MatchRules, mode?: string): MatchRules {
+  if (mode === "blitz") return { ...base, ...blitzRules };
+  return base;
+}
 
 export interface MatchData {
   versionId: string;
@@ -10,9 +16,10 @@ export interface MatchData {
   clubs: Club[];
   hasPair(a: string, b: string): Promise<boolean>;
   validate(a: string, b: string, normalized: string): Promise<boolean>;
+  trainingChoices(a: string, b: string, count?: number): Promise<string[]>;
   pickPair(excluded: string[], minimumAnswers: number): Promise<{ clubs: [Club, Club] } | null>;
   getPlayerChatStyle(playerId: string): Promise<string>;
-  persistStart(roomKey: string, players: [string, string], mode: "FRIEND" | "QUICK"): Promise<string>;
+  persistStart(roomKey: string, players: [string, string], mode: "FRIEND" | "QUICK" | "BLITZ"): Promise<string>;
   persistRound(input: PersistedRound): Promise<string>;
   persistFinish(roomKey: string, winnerId: string, scores: Record<string, number>): Promise<string>;
 }
@@ -44,6 +51,20 @@ export async function createMatchData(env: Env, requestedVersion?: string): Prom
     clubs: bootstrap.clubs,
     hasPair: (a, b) => rpc<boolean>(env, "match_pair_has_answers", { version_id: bootstrap.football_data_version_id, club_a_external: a, club_b_external: b }),
     validate: (a, b, normalized) => rpc<boolean>(env, "match_validate_answer", { version_id: bootstrap.football_data_version_id, club_a_external: a, club_b_external: b, answer_normalized: normalized }),
+    trainingChoices: async (a, b, count = 3) => {
+      try {
+        const value = await rpc<unknown>(env, "match_training_choices", {
+          version_id: bootstrap.football_data_version_id,
+          club_a_external: a,
+          club_b_external: b,
+          choice_count: count,
+        });
+        if (!Array.isArray(value)) return [];
+        return value.map(String).filter(Boolean);
+      } catch {
+        return [];
+      }
+    },
     pickPair: async (excluded, minimumAnswers) => {
       const value = await rpc<{ club_a_id: string; club_a_name: string; club_b_id: string; club_b_name: string } | null>(env, "match_pick_pair", { version_id: bootstrap.football_data_version_id, excluded_pairs: excluded, minimum_answers: minimumAnswers });
       return value ? { clubs: [{ id: value.club_a_id, name: value.club_a_name }, { id: value.club_b_id, name: value.club_b_name }] } : null;

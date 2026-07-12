@@ -1,7 +1,8 @@
 import { createRemoteJWKSet, jwtVerify, SignJWT } from "jose";
 
 export interface AuthEnv { SUPABASE_URL: string; MATCH_TOKEN_SECRET: string }
-export interface MatchTicket { playerId: string; matchId: string; mode?: "bot" | "quick" | undefined }
+export type MatchTicketMode = "bot" | "quick" | "blitz";
+export interface MatchTicket { playerId: string; matchId: string; mode?: MatchTicketMode | undefined }
 
 const keySets = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 function keySet(url: string) {
@@ -30,5 +31,5 @@ export async function createMatchTicket(ticket: MatchTicket, secret: string): Pr
 export async function verifyMatchTicket(token: string, matchId: string, secret: string): Promise<MatchTicket> {
   const { payload } = await jwtVerify(token, new TextEncoder().encode(secret), { algorithms: ["HS256"], audience: "football-link-match", issuer: "football-link-worker" });
   if (!payload.sub || payload.match_id !== matchId) throw new Error("MATCH_TICKET_SCOPE_INVALID");
-  return { playerId: payload.sub, matchId, mode: payload.mode === "bot" || payload.mode === "quick" ? payload.mode : undefined };
+  return { playerId: payload.sub, matchId, mode: payload.mode === "bot" || payload.mode === "quick" || payload.mode === "blitz" ? payload.mode : undefined };
 }

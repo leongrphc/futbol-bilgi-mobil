@@ -446,6 +446,7 @@ export type Database = {
       profiles: {
         Row: {
           avatar_url: string | null
+          blitz_trophies: number
           created_at: string
           display_name: string
           id: string
@@ -454,6 +455,7 @@ export type Database = {
         }
         Insert: {
           avatar_url?: string | null
+          blitz_trophies?: number
           created_at?: string
           display_name?: string
           id: string
@@ -462,6 +464,7 @@ export type Database = {
         }
         Update: {
           avatar_url?: string | null
+          blitz_trophies?: number
           created_at?: string
           display_name?: string
           id?: string
@@ -685,8 +688,50 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      album_mine: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          external_id: string
+          first_unlocked_at: string
+          football_player_id: string
+          game_name: string
+          last_unlocked_at: string
+          unlock_count: number
+        }[]
+      }
+      mastery_mine: {
+        Args: { p_limit?: number }
+        Returns: {
+          attempt_count: number
+          club_external_id: string
+          club_name: string
+          correct_count: number
+          hit_rate: number
+        }[]
+      }
+      player_public_card: {
+        Args: { p_player_id: string }
+        Returns: Json
+      }
+      weekly_theme: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
+      }
       cosmetics_equip: { Args: { p_item_id: string }; Returns: undefined }
       cosmetics_mine: { Args: Record<PropertyKey, never>; Returns: { accent: string; equipped: boolean; item_id: string; kind: string; name: string }[] }
+      quests_claim: { Args: { p_quest_id: string }; Returns: boolean }
+      quests_mine: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          claimed: boolean
+          completed: boolean
+          metric: string
+          progress: number
+          quest_day: string
+          quest_id: string
+          target_count: number
+        }[]
+      }
       get_player_chat_style: { Args: { p_player_id: string }; Returns: string }
       match_persist_finish: {
         Args: {
@@ -760,6 +805,7 @@ export type Database = {
         Returns: { display_name: string; losses: number; player_code: string; rank: number; trophies: number; wins: number }[]
       }
       competition_nearby: { Args: Record<PropertyKey, never>; Returns: { display_name: string; is_me: boolean; player_code: string; rank: number; tier: string; trophies: number }[] }
+      competition_blitz_nearby: { Args: Record<PropertyKey, never>; Returns: { blitz_trophies: number; display_name: string; is_me: boolean; player_code: string; rank: number }[] }
       competition_claim_season_reward: { Args: { p_season_id: string }; Returns: string }
       submit_result_report: {
         Args: {

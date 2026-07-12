@@ -21,6 +21,7 @@ Bu dosya gerçekleşen uygulamayı izler. Ürün gereksinimlerinin kesin kaynağ
 | 4 — Hızlı Maç ve kupa | 🟡 | Global Durable Object kuyruğu, Hızlı Maçta idempotent +25/−10 kupa güncellemesi, aktif sezon lig tablosu ve maç geçmişi kodlandı; migration deploy ve iki cihazlı queue smoke testi bekliyor. |
 | 5 — Yönetim ve veri operasyonu | 🟡 | Güvenli web kontrol odası; canlı metrikler, veri sürümü rollback, import geçmişi, aktif kulüpler, canlı oyun/ekonomi ayarları ve sonuç bildirimi yönetimiyle hazır. Oyuncu/alias düzenleme sonraki dilimde. |
 | 6 — Gelir modeli | 🟡 | Başlangıç kozmetik envanteri, güvenli kuşanma RPC'si ve mağaza ekranı kodlandı; reklam ve satın alma yok, migration deploy bekliyor. |
+| 6b — Sticky retention (Phase 1) | 🟡 | Player album + daily quests + metin share kodlandı (`20260713150000_phase1_album_quests.sql`); Supabase deploy ve canlı smoke bekliyor. |
 | 7 — Kapalı Android beta | 🟡 | Expo Doctor ve Android export geçiyor; gerçek cihaz matrisi, AAB ve çökme takibi eksik. |
 | 8 — Market hazırlığı | 🟡 | Cihaz diline göre Türkçe/İngilizce UI hazır; hukuk metinleri, mağaza varlıkları ve iOS doğrulaması yok. |
 

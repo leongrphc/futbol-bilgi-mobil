@@ -2,8 +2,8 @@ import { DurableObject } from "cloudflare:workers";
 import { normalizeAnswer } from "@football-link/answer-normalizer";
 import { MatchEngine, pairKey, type SerializedEngineState } from "@football-link/game-engine";
 import { PROTOCOL_VERSION, type ClientMessage, type MatchPhase, type QuickMessageId, type ServerEventType, type ServerMessage } from "@football-link/shared";
-import { createMatchData, type MatchData } from "./data";
-import { createMatchTicket, verifyMatchTicket, verifySupabaseAccessToken } from "./auth";
+import { applyMatchModeRules, createMatchData, type MatchData } from "./data";
+import { createMatchTicket, verifyMatchTicket, verifySupabaseAccessToken, type MatchTicketMode } from "./auth";
 
 interface Env { MATCH_ROOM: DurableObjectNamespace<MatchRoom>; MATCH_QUEUE: DurableObjectNamespace<MatchQueue>; SUPABASE_URL: string; SUPABASE_SERVICE_ROLE_KEY: string; MATCH_TOKEN_SECRET: string }
 type Pause = { phase: MatchPhase; remainingMs: number; disconnectedPlayer: string; deadline: number };
@@ -13,23 +13,92 @@ const quickMessageIds = new Set<QuickMessageId>(["GOOD_LUCK", "NICE_ONE", "SO_CL
 const chatStyleIds = new Set(["chat-classic", "chat-floodlight", "chat-derby", "chat-neon"]);
 const EMOTE_COOLDOWN_MS = 1_500;
 
-type QueueEntry = { playerId: string; enqueuedAt: number };
+type RegionClass = "TR" | "EU" | "OTHER";
+type QueueKind = "quick" | "blitz";
+type QueueEntry = { playerId: string; enqueuedAt: number; trophies: number; region: RegionClass };
+const QUEUE_TTL_MS = 120_000;
+const ABANDON_COOLDOWN_MS = 45_000;
+const cupBand = (waitMs: number) => waitMs < 15_000 ? 50 : waitMs < 45_000 ? 100 : Number.POSITIVE_INFINITY;
+const withinBand = (a: number, b: number, band: number) => Math.abs(a - b) <= band;
+const normalizeRegion = (value: unknown): RegionClass => value === "TR" || value === "EU" ? value : "OTHER";
+const normalizeQueueKind = (value: unknown): QueueKind => value === "blitz" ? "blitz" : "quick";
+
 export class MatchQueue extends DurableObject<Env> {
   async fetch(request: Request): Promise<Response> {
-    const body = await request.json<{ action?: "join" | "cancel"; playerId?: string }>();
+    const body = await request.json<{ action?: "join" | "cancel"; playerId?: string; trophies?: number; region?: string; queue?: string }>();
     const playerId = body.playerId;
     if (!playerId) return Response.json({ error: "INVALID_PLAYER" }, { status: 400 });
-    const queue = (await this.ctx.storage.get<QueueEntry[]>("queue")) ?? [];
-    const assignments = (await this.ctx.storage.get<Record<string, string>>("assignments")) ?? {};
-    if (assignments[playerId]) { const matchId = assignments[playerId]!; delete assignments[playerId]; await this.ctx.storage.put("assignments", assignments); return Response.json({ status: "MATCHED", match_id: matchId }); }
-    const filtered = queue.filter(entry => entry.playerId !== playerId && Date.now() - entry.enqueuedAt < 120_000);
-    if (body.action === "cancel") { await this.ctx.storage.put("queue", filtered); return Response.json({ status: "CANCELLED" }); }
-    const opponent = filtered.shift();
-    if (!opponent) { filtered.push({ playerId, enqueuedAt: Date.now() }); await this.ctx.storage.put("queue", filtered); return Response.json({ status: "WAITING" }); }
-    const matchId = `quick-${crypto.randomUUID()}`;
+    const kind = normalizeQueueKind(body.queue);
+    const now = Date.now();
+    const queueKey = kind === "blitz" ? "queue_blitz" : "queue";
+    const assignKey = kind === "blitz" ? "assignments_blitz" : "assignments";
+    const coolKey = kind === "blitz" ? "cooldowns_blitz" : "cooldowns";
+    const queue = ((await this.ctx.storage.get<QueueEntry[]>(queueKey)) ?? []).filter(entry => now - entry.enqueuedAt < QUEUE_TTL_MS);
+    const assignments = (await this.ctx.storage.get<Record<string, string>>(assignKey)) ?? {};
+    const cooldowns = ((await this.ctx.storage.get<Record<string, number>>(coolKey)) ?? {});
+    for (const [id, until] of Object.entries(cooldowns)) if (until <= now) delete cooldowns[id];
+
+    if (assignments[playerId]) {
+      const matchId = assignments[playerId]!;
+      delete assignments[playerId];
+      await this.ctx.storage.put(assignKey, assignments);
+      return Response.json({ status: "MATCHED", match_id: matchId, mode: kind });
+    }
+
+    if (body.action === "cancel") {
+      const remaining = queue.filter(entry => entry.playerId !== playerId);
+      cooldowns[playerId] = now + ABANDON_COOLDOWN_MS;
+      await Promise.all([this.ctx.storage.put(queueKey, remaining), this.ctx.storage.put(coolKey, cooldowns)]);
+      return Response.json({ status: "CANCELLED", cooldown_ms: ABANDON_COOLDOWN_MS, mode: kind });
+    }
+
+    if ((cooldowns[playerId] ?? 0) > now) {
+      return Response.json({ status: "COOLDOWN", cooldown_ms: (cooldowns[playerId] ?? now) - now, mode: kind });
+    }
+
+    const trophies = Number.isFinite(body.trophies) ? Math.max(0, Math.floor(Number(body.trophies))) : 0;
+    const region = normalizeRegion(body.region);
+    const selfBand = cupBand(0);
+
+    let bestIndex = -1;
+    let bestScore = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < queue.length; i++) {
+      const candidate = queue[i]!;
+      if (candidate.playerId === playerId) continue;
+      const waitMs = Math.max(now - candidate.enqueuedAt, 0);
+      const band = cupBand(waitMs);
+      if (!withinBand(trophies, candidate.trophies, band)) continue;
+      const regionPenalty = candidate.region === region ? 0 : 1_000_000;
+      const cupGap = Math.abs(trophies - candidate.trophies);
+      const ageBonus = now - candidate.enqueuedAt;
+      const score = regionPenalty + cupGap * 10 - ageBonus;
+      if (score < bestScore) { bestScore = score; bestIndex = i; }
+    }
+
+    if (bestIndex < 0) {
+      for (let i = 0; i < queue.length; i++) {
+        const candidate = queue[i]!;
+        if (candidate.playerId === playerId) continue;
+        const waitMs = now - candidate.enqueuedAt;
+        if (!withinBand(trophies, candidate.trophies, cupBand(waitMs))) continue;
+        bestIndex = i;
+        break;
+      }
+    }
+
+    if (bestIndex < 0) {
+      const withoutSelf = queue.filter(entry => entry.playerId !== playerId);
+      withoutSelf.push({ playerId, enqueuedAt: now, trophies, region });
+      await this.ctx.storage.put(queueKey, withoutSelf);
+      return Response.json({ status: "WAITING", band: selfBand === Number.POSITIVE_INFINITY ? "GLOBAL" : selfBand, region, mode: kind });
+    }
+
+    const opponent = queue[bestIndex]!;
+    const remaining = queue.filter((_, index) => index !== bestIndex).filter(entry => entry.playerId !== playerId);
+    const matchId = `${kind}-${crypto.randomUUID()}`;
     assignments[opponent.playerId] = matchId;
-    await Promise.all([this.ctx.storage.put("queue", filtered), this.ctx.storage.put("assignments", assignments)]);
-    return Response.json({ status: "MATCHED", match_id: matchId });
+    await Promise.all([this.ctx.storage.put(queueKey, remaining), this.ctx.storage.put(assignKey, assignments), this.ctx.storage.put(coolKey, cooldowns)]);
+    return Response.json({ status: "MATCHED", match_id: matchId, mode: kind, matched_region: opponent.region === region ? region : "MIXED" });
   }
 }
 
@@ -58,18 +127,31 @@ export class MatchRoom extends DurableObject<Env> {
     const player = ticket.playerId;
     const wantsBot = ticket.mode === "bot";
     const quickMatch = ticket.mode === "quick";
+    const blitzMatch = ticket.mode === "blitz";
     const current = [...this.sockets].find(([, id]) => id === player);
     if (current) { current[0].close(1000, "replaced"); this.sockets.delete(current[0]); }
     const pair = new WebSocketPair(); this.ctx.acceptWebSocket(pair[1]); pair[1].serializeAttachment({ player }); this.sockets.set(pair[1], player);
     const players = [...new Set(this.sockets.values())];
     if (!this.engine && (players.length === 2 || (players.length === 1 && wantsBot))) {
       this.data = await createMatchData(this.env);
+      if (blitzMatch) this.data.rules = applyMatchModeRules(this.data.rules, "blitz");
       const opponent = wantsBot ? BOT_PLAYER_ID : players[1]!;
       this.engine = new MatchEngine([players[0]!, opponent], this.data.rules);
       if (wantsBot) this.engine.ready(BOT_PLAYER_ID);
-      else await this.data.persistStart(this.matchId, this.engine.state.players, quickMatch ? "QUICK" : "FRIEND");
-      this.engine.state.deadline = Date.now() + 10_000;
-      this.broadcast("READY_CHECK_STARTED", { deadline: this.engine.state.deadline });
+      else await this.data.persistStart(this.matchId, this.engine.state.players, blitzMatch ? "BLITZ" : quickMatch ? "QUICK" : "FRIEND");
+      this.engine.state.deadline = Date.now() + (blitzMatch ? 8_000 : 10_000);
+      const cards = wantsBot ? [] : await this.loadPlayerCards(this.engine.state.players);
+      this.broadcast("READY_CHECK_STARTED", {
+        deadline: this.engine.state.deadline,
+        player_cards: cards,
+        match_mode: blitzMatch ? "BLITZ" : quickMatch ? "QUICK" : wantsBot ? "BOT" : "FRIEND",
+        rules: {
+          winning_score: this.data.rules.winningScore,
+          maximum_rounds: this.data.rules.maximumRounds,
+          answer_ms: this.data.rules.answerMs,
+          selection_ms: this.data.rules.selectionMs,
+        },
+      });
     } else if (this.engine) {
       if (this.pause?.disconnectedPlayer === player) await this.resume(player);
       else {
@@ -104,7 +186,11 @@ export class MatchRoom extends DurableObject<Env> {
   private async handle(player: string, cmd: ClientMessage): Promise<void> {
     const engine = this.engine!, data = this.data!;
     switch (cmd.event_type) {
-      case "READY_CONFIRM": if (engine.ready(player)) { this.broadcast("MATCH_STARTED", { football_data_version_id: data.versionId }); await this.startSelection(); } break;
+      case "READY_CONFIRM": if (engine.ready(player)) {
+        const cards = this.hasBot() ? [] : await this.loadPlayerCards(engine.state.players);
+        this.broadcast("MATCH_STARTED", { football_data_version_id: data.versionId, player_cards: cards });
+        await this.startSelection();
+      } break;
       case "TEAM_SELECT": engine.select(player, String(cmd.payload.club_id)); break;
       case "TEAM_CONFIRM": {
         if (this.hasBot() && player !== BOT_PLAYER_ID) {
@@ -117,7 +203,9 @@ export class MatchRoom extends DurableObject<Env> {
       case "ANSWER_SUBMIT": {
         const clubs = [...engine.state.selections.values()] as [string, string]; const raw = String(cmd.payload.answer ?? ""); const normalized = normalizeAnswer(raw);
         const correct = normalized ? await data.validate(clubs[0], clubs[1], normalized) : false;
-        const receivedAt = Date.now(); engine.submit(player, raw, receivedAt, correct ? new Set([normalized]) : new Set()); this.sendTo(player, "ANSWER_ACCEPTED", { last_second: engine.state.deadline != null && engine.state.deadline - receivedAt <= 2_500 });
+        const receivedAt = Date.now(); engine.submit(player, raw, receivedAt, correct ? new Set([normalized]) : new Set());
+        // correct flag is private to submitter only — never broadcast
+        this.sendTo(player, "ANSWER_ACCEPTED", { correct, last_second: engine.state.deadline != null && engine.state.deadline - receivedAt <= 2_500 });
         if (engine.state.submissions.size === 2) await this.startReveal(); break;
       }
       case "EMOTE_SEND": {
@@ -172,7 +260,17 @@ export class MatchRoom extends DurableObject<Env> {
       else if (this.engine.state.phase === "COUNTDOWN") {
         this.engine.startAnswering(Date.now() + this.data.rules.answerMs);
         if (this.hasBot()) this.engine.submit(BOT_PLAYER_ID, "cevap yok", Date.now(), new Set());
-        this.broadcast("ANSWER_PHASE_STARTED", { deadline: this.engine.state.deadline }); await this.ctx.storage.setAlarm(this.engine.state.deadline!);
+        // Training-only multiple choice: never attach choices outside bot matches
+        let choices: string[] = [];
+        if (this.hasBot()) {
+          const clubs = [...this.engine.state.selections.values()] as [string, string];
+          if (clubs.length === 2) choices = await this.data.trainingChoices(clubs[0]!, clubs[1]!, 3);
+        }
+        this.broadcast("ANSWER_PHASE_STARTED", {
+          deadline: this.engine.state.deadline,
+          ...(choices.length >= 2 ? { choices, input_mode: "CHOICE" } : { input_mode: "TEXT" }),
+        });
+        await this.ctx.storage.setAlarm(this.engine.state.deadline!);
       }
       else if (this.engine.state.phase === "ANSWERING") await this.startReveal();
       else if (this.engine.state.phase === "REVEAL") await this.startSelection();
@@ -242,10 +340,29 @@ export class MatchRoom extends DurableObject<Env> {
   private async startReveal(): Promise<void> {
     const engine = this.engine!; const clubs = [...engine.state.selections.values()] as [string, string]; const suddenDeath = engine.state.suddenDeath;
     const result = engine.reveal(); this.persistedRounds++;
+    const ranked = [...engine.state.submissions.values()].filter(item => item.correct).sort((a, b) => a.sequence - b.sequence);
+    const marginMs = ranked.length >= 2 ? Math.max(0, ranked[1]!.receivedAt - ranked[0]!.receivedAt) : null;
+    const winReason = ranked.length >= 2 ? "FIRST_CORRECT" : ranked.length === 1 ? "ONLY_CORRECT" : "NO_CORRECT";
+    // Hold reveal long enough for momentum beat; floor at 1s even if admin sets lower
+    const revealMs = Math.max(1_000, this.data!.rules.revealMs);
     if (!this.hasBot()) await this.data!.persistRound({ roomKey: this.matchId, ordinal: this.persistedRounds, suddenDeath, clubs, winnerId: result.roundWinnerId, submissions: [...engine.state.submissions.values()].map(item => ({ player_id: item.playerId, raw_answer: item.raw, normalized_answer: item.normalized, is_correct: item.correct, received_at_ms: item.receivedAt, sequence: item.sequence })), scores: engine.state.scores });
-    this.broadcast("REVEAL_STARTED", { submissions: [...this.engine!.state.submissions.values()].map(({ playerId, raw, correct }) => ({ player_id: playerId, answer: raw, correct })), round_winner_id: result.roundWinnerId, scores: this.engine!.state.scores });
-    this.broadcast("SCORE_UPDATED", { scores: this.engine!.state.scores });
-    if (result.finished) { if (!this.hasBot()) await this.data!.persistFinish(this.matchId, this.engine!.state.winnerId!, this.engine!.state.scores); this.broadcast("MATCH_FINISHED", { winner_id: this.engine!.state.winnerId }); } else { this.engine!.state.deadline = Date.now() + this.data!.rules.revealMs; await this.ctx.storage.setAlarm(this.engine!.state.deadline); }
+    this.broadcast("REVEAL_STARTED", {
+      submissions: [...engine.state.submissions.values()].map(({ playerId, raw, correct, receivedAt, sequence }) => ({ player_id: playerId, answer: raw, correct, received_at_ms: receivedAt, sequence })),
+      round_winner_id: result.roundWinnerId,
+      scores: engine.state.scores,
+      margin_ms: marginMs,
+      win_reason: winReason,
+      reveal_ms: revealMs,
+      reveal_deadline: result.finished ? null : Date.now() + revealMs,
+    });
+    this.broadcast("SCORE_UPDATED", { scores: engine.state.scores });
+    if (result.finished) {
+      if (!this.hasBot()) await this.data!.persistFinish(this.matchId, engine.state.winnerId!, engine.state.scores);
+      this.broadcast("MATCH_FINISHED", { winner_id: engine.state.winnerId });
+    } else {
+      engine.state.deadline = Date.now() + revealMs;
+      await this.ctx.storage.setAlarm(engine.state.deadline);
+    }
   }
   private async persistRematchOffer(requester: string, recipient: string, nextMatchKey: string): Promise<void> {
     const response = await fetch(`${this.env.SUPABASE_URL}/rest/v1/rematch_offers`, { method: "POST", headers: { apikey: this.env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${this.env.SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" }, body: JSON.stringify({ room_key: this.matchId, requester_id: requester, recipient_id: recipient, next_match_key: nextMatchKey }) });
@@ -256,6 +373,21 @@ export class MatchRoom extends DurableObject<Env> {
   private async finishForfeit(leaver: string): Promise<void> { const winner = this.engine!.state.players.find(p => p !== leaver)!; this.pause = null; this.engine!.state.winnerId = winner; this.engine!.state.phase = "FINISHED"; this.engine!.state.deadline = null; if (!this.hasBot()) await this.data!.persistFinish(this.matchId, winner, this.engine!.state.scores); this.broadcast("MATCH_FINISHED", { winner_id: winner, forfeit: true }); }
   private async ensureLoaded(): Promise<void> { if (this.engine && this.data) return; const stored=await this.ctx.storage.get<StoredRoom>("room"); if(stored){this.matchId=stored.matchId;this.engine=MatchEngine.restore(stored.engine);this.pause=stored.pause;this.persistedRounds=stored.persistedRounds??0;this.rematch=stored.rematch??null;} if(!this.data&&this.env.SUPABASE_URL&&this.env.SUPABASE_SERVICE_ROLE_KEY)this.data=await createMatchData(this.env,stored?.dataVersionId); for(const ws of this.ctx.getWebSockets()){const attachment=ws.deserializeAttachment() as {player?:string}|null;if(attachment?.player)this.sockets.set(ws,attachment.player);} }
   private async persist():Promise<void>{if(!this.engine||!this.data)return;await this.ctx.storage.put("room",{matchId:this.matchId,engine:this.engine.serialize(),pause:this.pause,dataVersionId:this.data.versionId,persistedRounds:this.persistedRounds,rematch:this.rematch} satisfies StoredRoom);}
+  private async loadPlayerCards(playerIds: string[]): Promise<Record<string, unknown>[]> {
+    try {
+      if (!this.env.SUPABASE_URL || !this.env.SUPABASE_SERVICE_ROLE_KEY) return [];
+      const uuids = playerIds.filter(id => id !== BOT_PLAYER_ID && /^[0-9a-f-]{36}$/i.test(id));
+      if (!uuids.length) return [];
+      const response = await fetch(`${this.env.SUPABASE_URL}/rest/v1/rpc/match_player_cards`, {
+        method: "POST",
+        headers: { apikey: this.env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${this.env.SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ p_player_ids: uuids }),
+      });
+      if (!response.ok) return [];
+      const value = await response.json();
+      return Array.isArray(value) ? value as Record<string, unknown>[] : [];
+    } catch { return []; }
+  }
   private envelope(type: ServerEventType, payload: Record<string, unknown>): ServerMessage { return { protocol_version: 1, match_id: this.matchId, event_id: crypto.randomUUID(), server_timestamp: new Date().toISOString(), event_type: type, payload }; }
   private send(ws: WebSocket, type: ServerEventType, payload: Record<string, unknown>): void { ws.send(JSON.stringify(this.envelope(type, payload))); }
   private broadcast(type: ServerEventType, payload: Record<string, unknown>): void { for (const ws of this.sockets.keys()) this.send(ws, type, payload); }
@@ -275,18 +407,45 @@ export default { async fetch(request: Request, env: Env): Promise<Response> {
       const body = await request.json<{ match_id?: string; mode?: string }>();
       const matchId = body.match_id?.trim();
       if (!matchId || matchId.length > 100) return Response.json({ error: "INVALID_MATCH_ID" }, { status: 400, headers: corsHeaders });
-      const token = await createMatchTicket({ playerId, matchId, mode: body.mode === "bot" || body.mode === "quick" ? body.mode : undefined }, env.MATCH_TOKEN_SECRET);
+      const mode: MatchTicketMode | undefined = body.mode === "bot" || body.mode === "quick" || body.mode === "blitz" ? body.mode : undefined;
+      const token = await createMatchTicket({ playerId, matchId, mode }, env.MATCH_TOKEN_SECRET);
       return Response.json({ token, expires_in: 60 }, { headers: corsHeaders });
     } catch { return Response.json({ error: "UNAUTHORIZED" }, { status: 401, headers: corsHeaders }); }
   }
-  if (url.pathname === "/quick-match" && request.method === "POST") {
+  if ((url.pathname === "/quick-match" || url.pathname === "/blitz-match") && request.method === "POST") {
     try {
       const bearer = request.headers.get("Authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
       if (!bearer) return Response.json({ error: "UNAUTHORIZED" }, { status: 401, headers: corsHeaders });
       const playerId = await verifySupabaseAccessToken(bearer, env);
-      const body = await request.json<{ action?: "join" | "cancel" }>();
+      const body = await request.json<{ action?: "join" | "cancel"; region?: string }>();
+      const queueKind = url.pathname === "/blitz-match" ? "blitz" : "quick";
+      // trophies from DB (not client) — quick uses trophies, blitz uses blitz_trophies
+      let trophies = 0;
+      if (body.action !== "cancel" && env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY) {
+        try {
+          const select = queueKind === "blitz" ? "blitz_trophies" : "trophies";
+          const profileResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/profiles?id=eq.${playerId}&select=${select}`, {
+            headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}` },
+          });
+          if (profileResponse.ok) {
+            const rows = await profileResponse.json() as { trophies?: number; blitz_trophies?: number }[];
+            const raw = queueKind === "blitz" ? rows[0]?.blitz_trophies : rows[0]?.trophies;
+            trophies = Math.max(0, Math.floor(Number(raw ?? 0)));
+          }
+        } catch { /* queue still works with 0 trophies fallback */ }
+      }
       const queue = env.MATCH_QUEUE.get(env.MATCH_QUEUE.idFromName("global"));
-      const response = await queue.fetch(new Request("https://queue/", { method: "POST", body: JSON.stringify({ action: body.action === "cancel" ? "cancel" : "join", playerId }), headers: { "Content-Type": "application/json" } }));
+      const response = await queue.fetch(new Request("https://queue/", {
+        method: "POST",
+        body: JSON.stringify({
+          action: body.action === "cancel" ? "cancel" : "join",
+          playerId,
+          trophies,
+          region: body.region,
+          queue: queueKind,
+        }),
+        headers: { "Content-Type": "application/json" },
+      }));
       return new Response(response.body, { status: response.status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     } catch { return Response.json({ error: "UNAUTHORIZED" }, { status: 401, headers: corsHeaders }); }
   }
