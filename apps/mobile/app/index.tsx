@@ -85,6 +85,7 @@ export default function Login() {
   const insets = useSafeAreaInsets();
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   useEffect(() => {
+    // Android pads manually; iOS relies on ScrollView auto keyboard insets only.
     const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
     const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
     const show = Keyboard.addListener(showEvent, event => setKeyboardHeight(event.endCoordinates.height));
@@ -94,20 +95,18 @@ export default function Login() {
       hide.remove();
     };
   }, []);
-  const formPadBottom = Math.max(12, keyboardHeight > 0 ? keyboardHeight + 10 - insets.bottom : 12);
+  const formPadBottom = Platform.OS === "ios"
+    ? (keyboardHeight > 0 ? 16 : 12)
+    : Math.max(12, keyboardHeight > 0 ? keyboardHeight + 10 - insets.bottom : 12);
 
   if (authLoading) return <SafeAreaView style={styles.loading}><ActivityIndicator color={colors.primary} size="large" /><Text style={styles.loadingText}>{tr.auth.checking}</Text></SafeAreaView>;
 
   return <SafeAreaView style={styles.safe}>
-    <KeyboardAvoidingView
-      style={styles.keyboard}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={Platform.OS === "ios" ? insets.top : 0}
-    >
+    <KeyboardAvoidingView style={styles.keyboard} behavior={undefined} enabled={false}>
       <ScrollView
         contentContainerStyle={[styles.page, { paddingBottom: formPadBottom }]}
         keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
+        keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
         automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
       >
         <View style={styles.brand}>

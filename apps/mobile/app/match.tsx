@@ -411,12 +411,14 @@ export default function Match() {
   const scrollRef = useRef<ScrollView>(null);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   useEffect(() => {
+    // Android: manual pad (resize mode). iOS: ScrollView auto insets only — no stacked avoiders.
     const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
     const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
     const show = Keyboard.addListener(showEvent, event => {
       setKeyboardHeight(event.endCoordinates.height);
-      // Keep focused answer field clear of the keyboard with >=10px gap.
-      requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
+      if (Platform.OS === "android") {
+        requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
+      }
     });
     const hide = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
     return () => {
@@ -425,19 +427,19 @@ export default function Match() {
     };
   }, []);
   const keyboardGap = 10;
-  const pagePadBottom = Math.max(40, keyboardHeight > 0 ? keyboardHeight + keyboardGap - insets.bottom : 40);
+  // iOS: only a small gap — auto keyboard insets already shift the scroll view.
+  // Android: full keyboard height pad so the field sits above the keyboard.
+  const pagePadBottom = Platform.OS === "ios"
+    ? (keyboardHeight > 0 ? keyboardGap + 6 : 40)
+    : Math.max(40, keyboardHeight > 0 ? keyboardHeight + keyboardGap - insets.bottom : 40);
 
   return <SafeAreaView style={[styles.safe, { backgroundColor: pitchTheme.background }]}>
-    <KeyboardAvoidingView
-      style={styles.keyboard}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={Platform.OS === "ios" ? insets.top : 0}
-    >
+    <KeyboardAvoidingView style={styles.keyboard} behavior={undefined} enabled={false}>
     <ScrollView
       ref={scrollRef}
       contentContainerStyle={[styles.page, { paddingBottom: pagePadBottom }]}
       keyboardShouldPersistTaps="handled"
-      keyboardDismissMode="on-drag"
+      keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
       automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
     >
       <View pointerEvents="none" style={[styles.pitchAtmosphere, { borderColor: pitchTheme.line, backgroundColor: pitchTheme.haze }]}><View style={[styles.atmosphereCircle, { borderColor: pitchTheme.line }]} /><View style={[styles.atmosphereHalf, { backgroundColor: pitchTheme.line }]} /></View>
