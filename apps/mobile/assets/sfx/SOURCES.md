@@ -1,6 +1,6 @@
 # SFX sources
 
-Free libraries remapped into pps/mobile/assets/sfx/*.wav.
+Free libraries remapped into `apps/mobile/assets/sfx/*.wav`.
 
 ## Kenney.nl — [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/)
 - [Interface Sounds](https://kenney.nl/assets/interface-sounds)
