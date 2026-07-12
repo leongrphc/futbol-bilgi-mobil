@@ -11,7 +11,7 @@ import { DailyQuestsCard } from "@/quests/DailyQuestsCard";
 import { isTutorialComplete, markTutorialComplete, resetTutorial } from "@/onboarding/tutorial";
 import { CoinPill, DollarPill } from "@/economy/CoinPill";
 import { getAudioPrefsSync, loadAudioPrefs, setMusicEnabled, setSfxEnabled, subscribeAudioPrefs, type AudioPrefs } from "@/audio/preferences";
-import { playSfx, preloadSounds, startLobbyMusic, stopLobbyMusic } from "@/audio/sounds";
+import { playSfx, startLobbyMusic } from "@/audio/sounds";
 
 export default function Lobby() {
   const { room: invitedRoom } = useLocalSearchParams<{ room?: string }>();
@@ -45,8 +45,6 @@ export default function Lobby() {
   }, []);
   useFocusEffect(useCallback(() => {
     let alive = true;
-    void preloadSounds();
-    void startLobbyMusic();
     void (async () => {
       const done = await isTutorialComplete();
       if (alive) setShowTutorial(!done);
@@ -80,7 +78,6 @@ export default function Lobby() {
     })();
     return () => {
       alive = false;
-      void stopLobbyMusic();
     };
   }, []));
   const openAccountMenu = () => Alert.alert(profile?.displayName ?? tr.nav.account, profile ? `#${profile.playerCode}` : undefined, [

@@ -142,10 +142,8 @@ async function syncLobbyMusic() {
         warnOnce("lobby music asset not loaded");
         return;
       }
-      if (!lobbyPlayer.playing) {
-        await lobbyPlayer.seekTo(0);
-        lobbyPlayer.play();
-      }
+      // Resume from current position — never force seek(0) on tab return.
+      if (!lobbyPlayer.playing) lobbyPlayer.play();
     } else if (lobbyPlayer.playing) {
       lobbyPlayer.pause();
     }
@@ -154,14 +152,32 @@ async function syncLobbyMusic() {
   }
 }
 
+/** Keep bed playing across tabs; call once from tabs shell. */
 export async function startLobbyMusic() {
   lobbyWanted = true;
   await syncLobbyMusic();
 }
 
+/** Pause bed (match / leave tabs). Position kept for resume. */
 export async function stopLobbyMusic() {
   lobbyWanted = false;
   await syncLobbyMusic();
+}
+
+/** Hard restart from 0 — only if user explicitly restarts music later. */
+export async function restartLobbyMusic() {
+  lobbyWanted = true;
+  try {
+    await ensurePlayers();
+    if (!lobbyPlayer) return;
+    const loaded = await waitForLoad(lobbyPlayer);
+    if (!loaded) return;
+    lobbyPlayer.pause();
+    await lobbyPlayer.seekTo(0);
+    if (getAudioPrefsSync().musicEnabled) lobbyPlayer.play();
+  } catch (error) {
+    warnOnce("lobby music restart failed", error);
+  }
 }
 
 subscribeAudioPrefs(() => {
