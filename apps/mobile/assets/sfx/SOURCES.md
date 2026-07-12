@@ -20,6 +20,6 @@ Free libraries remapped into `apps/mobile/assets/sfx/*.wav`.
 
 ## Mixkit — [Mixkit License](https://mixkit.co/license/#sfxFree)
 - [Whistle SFX](https://mixkit.co/free-sound-effects/whistle/)
-- whistle <- preview id 611 (short sports/police-style peep)
+- whistle ← **Police short whistle** (preview id 615)
 
 Swap files anytime; keep filenames stable for the app require() map.
