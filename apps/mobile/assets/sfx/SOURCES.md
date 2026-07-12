@@ -1,6 +1,8 @@
 # SFX sources
 
-Free libraries remapped into `apps/mobile/assets/sfx/*.wav`.
+Free libraries remapped into `apps/mobile/assets/sfx/`.
+
+One-shots stay as WAV. Long beds are AAC (`.m4a`) so Android loads them before the play timeout.
 
 ## Kenney.nl — [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/)
 
@@ -21,12 +23,12 @@ Free libraries remapped into `apps/mobile/assets/sfx/*.wav`.
 - [Bass SFX](https://mixkit.co/free-sound-effects/bass/)
 - [Game SFX](https://mixkit.co/free-sound-effects/game/)
 - whistle ← **Police short whistle** (preview id 615)
-- lobby_loop ← **Game show fun suspense** (preview id 942)
+- lobby_loop.m4a ← **Game show fun suspense** (preview id 942)
 - tab ← **Modern technology select** (preview id 3124)
 - correct ← **Correct positive notification** (preview id 957)
 - wrong ← **Game show wrong answer buzz** (preview id 950)
 - tick ← **Tick tock clock timer** (preview id 1045, first ~0.28s one-shot)
-- sudden_death_bed ← **Mystwrious bass pulse** (preview id 2298, looped during sudden death)
+- sudden_death_bed.m4a ← **Mystwrious bass pulse** (preview id 2298, looped during sudden death)
 - emote ← **Plastic bubble click** (preview id 1124)
 - finish_win ← **Game level completed** (preview id 2059)
 - finish_loss ← **Player losing or failing** (preview id 2042)
