@@ -15,7 +15,7 @@ import { supabase } from "@/auth/supabase";
 import { getChatStyle, type ChatStyleId } from "@/cosmetics/chat-style";
 import { freeEmotesFallback, loadOwnedEmotes, type OwnedEmote } from "@/cosmetics/emotes";
 import { badgeGlyph, defaultLoadout, getCosmeticLoadout, pitchThemes, type CosmeticLoadout } from "@/cosmetics/loadout";
-import { playSfx, preloadSounds, stopLobbyMusic } from "@/audio/sounds";
+import { playSfx, preloadSounds, startSuddenDeathBed, stopLobbyMusic, stopSuddenDeathBed } from "@/audio/sounds";
 
 type UiPhase = "WAITING" | "READY" | "SELECTING" | "COUNTDOWN" | "ANSWERING" | "REVEAL" | "FINISHED" | "PAUSED";
 type AnswerFeedback = "correct" | "wrong" | null;
@@ -206,6 +206,9 @@ export default function Match() {
   useEffect(() => {
     void stopLobbyMusic();
     void preloadSounds();
+    return () => {
+      void stopSuddenDeathBed();
+    };
   }, []);
   useEffect(() => {
     // First transition into club selection = match kickoff.
@@ -283,12 +286,18 @@ export default function Match() {
     setShowSuddenDeath(true);
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     void playSfx("sudden_death");
+    void startSuddenDeathBed();
     const timer = setTimeout(() => setShowSuddenDeath(false), reducedMotion ? 900 : 1_800);
     return () => clearTimeout(timer);
   }, [reducedMotion, state.suddenDeathPulse]);
   useEffect(() => {
+    if (state.suddenDeath && state.phase !== "FINISHED") void startSuddenDeathBed();
+    if (state.phase === "FINISHED" || !state.suddenDeath) void stopSuddenDeathBed();
+  }, [state.phase, state.suddenDeath]);
+  useEffect(() => {
     if (state.phase !== "FINISHED" || finishSfxPlayed.current) return;
     finishSfxPlayed.current = true;
+    void stopSuddenDeathBed();
     void playSfx("finish");
   }, [state.phase]);
   useEffect(() => {

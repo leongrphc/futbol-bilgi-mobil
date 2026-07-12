@@ -11,7 +11,7 @@ Free libraries remapped into `apps/mobile/assets/sfx/*.wav`.
 | Game slot | Source file |
 |---|---|
 | emote | pluck_001.ogg |
-| sudden_death | highDown.ogg |
+| sudden_death (stinger) | highDown.ogg |
 | finish | twoTone1.ogg |
 
 ## Mixkit — [Mixkit License](https://mixkit.co/license/#sfxFree)
@@ -20,11 +20,13 @@ Free libraries remapped into `apps/mobile/assets/sfx/*.wav`.
 - [Game show SFX](https://mixkit.co/free-sound-effects/game-show/)
 - [Click SFX](https://mixkit.co/free-sound-effects/click/)
 - [Clock SFX](https://mixkit.co/free-sound-effects/clock/)
+- [Bass SFX](https://mixkit.co/free-sound-effects/bass/)
 - whistle ← **Police short whistle** (preview id 615)
 - lobby_loop ← **Game show fun suspense** (preview id 942)
 - tab ← **Modern technology select** (preview id 3124)
 - correct ← **Correct positive notification** (preview id 957)
 - wrong ← **Game show wrong answer buzz** (preview id 950)
 - tick ← **Tick tock clock timer** (preview id 1045, first ~0.28s one-shot)
+- sudden_death_bed ← **Mystwrious bass pulse** (preview id 2298, looped during sudden death)
 
 Swap files anytime; keep filenames stable for the app `require()` map.
