@@ -10,7 +10,6 @@ Free libraries remapped into `apps/mobile/assets/sfx/*.wav`.
 
 | Game slot | Source file |
 |---|---|
-| tick | toggle_001.ogg |
 | emote | pluck_001.ogg |
 | sudden_death | highDown.ogg |
 | finish | twoTone1.ogg |
@@ -20,10 +19,12 @@ Free libraries remapped into `apps/mobile/assets/sfx/*.wav`.
 - [Whistle SFX](https://mixkit.co/free-sound-effects/whistle/)
 - [Game show SFX](https://mixkit.co/free-sound-effects/game-show/)
 - [Click SFX](https://mixkit.co/free-sound-effects/click/)
+- [Clock SFX](https://mixkit.co/free-sound-effects/clock/)
 - whistle ← **Police short whistle** (preview id 615)
 - lobby_loop ← **Game show fun suspense** (preview id 942)
 - tab ← **Modern technology select** (preview id 3124)
 - correct ← **Correct positive notification** (preview id 957)
 - wrong ← **Game show wrong answer buzz** (preview id 950)
+- tick ← **Tick tock clock timer** (preview id 1045, first ~0.28s one-shot)
 
 Swap files anytime; keep filenames stable for the app `require()` map.
