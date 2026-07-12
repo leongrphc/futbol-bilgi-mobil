@@ -25,7 +25,7 @@ async function ensureConfigured() {
   configured = true;
   try {
     await setAudioModeAsync({
-      playsInSilentMode: true,
+      playsInSilentMode: false,
       interruptionMode: "mixWithOthers",
       shouldPlayInBackground: false,
       allowsRecording: false,
