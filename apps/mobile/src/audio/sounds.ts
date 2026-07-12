@@ -19,59 +19,106 @@ let lobbyPlayer: AudioPlayer | null = null;
 let configured = false;
 let ready: Promise<void> | null = null;
 let lobbyWanted = false;
+let warnedOnce = false;
+
+function warnOnce(message: string, error?: unknown) {
+  if (warnedOnce) return;
+  warnedOnce = true;
+  console.warn(`[audio] ${message}`, error ?? "");
+}
 
 async function ensureConfigured() {
   if (configured) return;
-  configured = true;
   try {
     await setAudioModeAsync({
+      // Respect hardware silent / Android ringer mute (user preference).
       playsInSilentMode: false,
-      interruptionMode: "mixWithOthers",
+      // Request focus so Android actually routes short UI sounds.
+      interruptionMode: "duckOthers",
       shouldPlayInBackground: false,
       allowsRecording: false,
       shouldRouteThroughEarpiece: false,
     });
-  } catch {
-    // audio mode best-effort
+    configured = true;
+  } catch (error) {
+    warnOnce("setAudioModeAsync failed — rebuild app if expo-audio native module missing", error);
   }
 }
 
 function makePlayer(source: number, loop = false): AudioPlayer {
-  const player = createAudioPlayer(source);
+  // downloadFirst helps local require() assets resolve to a playable URI on device.
+  const player = createAudioPlayer(source, { downloadFirst: true, updateInterval: 1000 });
   player.loop = loop;
-  player.volume = loop ? 0.22 : 0.85;
+  player.volume = loop ? 0.35 : 1;
   return player;
+}
+
+function waitForLoad(player: AudioPlayer, timeoutMs = 2_500): Promise<boolean> {
+  if (player.isLoaded) return Promise.resolve(true);
+  return new Promise(resolve => {
+    const started = Date.now();
+    const timer = setInterval(() => {
+      if (player.isLoaded) {
+        clearInterval(timer);
+        resolve(true);
+        return;
+      }
+      if (Date.now() - started >= timeoutMs) {
+        clearInterval(timer);
+        resolve(false);
+      }
+    }, 40);
+  });
 }
 
 async function ensurePlayers() {
   if (ready) return ready;
   ready = (async () => {
-    await loadAudioPrefs();
-    await ensureConfigured();
-    for (const id of Object.keys(sources) as SfxId[]) {
-      if (!players.has(id)) players.set(id, makePlayer(sources[id]));
+    try {
+      await loadAudioPrefs();
+      await ensureConfigured();
+      for (const id of Object.keys(sources) as SfxId[]) {
+        if (!players.has(id)) players.set(id, makePlayer(sources[id]));
+      }
+      if (!lobbyPlayer) lobbyPlayer = makePlayer(lobbySource, true);
+    } catch (error) {
+      ready = null;
+      warnOnce("audio player init failed", error);
+      throw error;
     }
-    if (!lobbyPlayer) lobbyPlayer = makePlayer(lobbySource, true);
   })();
   return ready;
 }
 
 async function replay(player: AudioPlayer) {
+  const loaded = await waitForLoad(player);
+  if (!loaded) {
+    warnOnce("audio asset still not loaded — check metro asset + native rebuild");
+    return;
+  }
   try {
     player.pause();
     await player.seekTo(0);
     player.play();
-  } catch {
-    // ignore transient audio errors
+  } catch (error) {
+    warnOnce("play failed", error);
   }
 }
 
 export async function preloadSounds() {
-  await ensurePlayers();
+  try {
+    await ensurePlayers();
+  } catch {
+    // keep UI running without audio
+  }
 }
 
 export async function playSfx(id: SfxId) {
-  await ensurePlayers();
+  try {
+    await ensurePlayers();
+  } catch {
+    return;
+  }
   if (!getAudioPrefsSync().sfxEnabled) return;
   const player = players.get(id);
   if (!player) return;
@@ -79,11 +126,20 @@ export async function playSfx(id: SfxId) {
 }
 
 async function syncLobbyMusic() {
-  await ensurePlayers();
+  try {
+    await ensurePlayers();
+  } catch {
+    return;
+  }
   if (!lobbyPlayer) return;
   const enabled = lobbyWanted && getAudioPrefsSync().musicEnabled;
   try {
     if (enabled) {
+      const loaded = await waitForLoad(lobbyPlayer);
+      if (!loaded) {
+        warnOnce("lobby music asset not loaded");
+        return;
+      }
       if (!lobbyPlayer.playing) {
         await lobbyPlayer.seekTo(0);
         lobbyPlayer.play();
@@ -91,8 +147,8 @@ async function syncLobbyMusic() {
     } else if (lobbyPlayer.playing) {
       lobbyPlayer.pause();
     }
-  } catch {
-    // ignore
+  } catch (error) {
+    warnOnce("lobby music sync failed", error);
   }
 }
 

@@ -11,7 +11,7 @@ import { DailyQuestsCard } from "@/quests/DailyQuestsCard";
 import { isTutorialComplete, markTutorialComplete, resetTutorial } from "@/onboarding/tutorial";
 import { CoinPill, DollarPill } from "@/economy/CoinPill";
 import { getAudioPrefsSync, loadAudioPrefs, setMusicEnabled, setSfxEnabled, subscribeAudioPrefs, type AudioPrefs } from "@/audio/preferences";
-import { preloadSounds, startLobbyMusic, stopLobbyMusic } from "@/audio/sounds";
+import { playSfx, preloadSounds, startLobbyMusic, stopLobbyMusic } from "@/audio/sounds";
 
 export default function Lobby() {
   const { room: invitedRoom } = useLocalSearchParams<{ room?: string }>();
@@ -87,11 +87,21 @@ export default function Lobby() {
     { text: tr.report.cancel, style: "cancel" },
     {
       text: audioPrefs.sfxEnabled ? tr.audio.sfxOn : tr.audio.sfxOff,
-      onPress: () => { void setSfxEnabled(!audioPrefs.sfxEnabled).then(setAudioPrefs); },
+      onPress: () => {
+        void setSfxEnabled(!audioPrefs.sfxEnabled).then(next => {
+          setAudioPrefs(next);
+          if (next.sfxEnabled) void playSfx("correct");
+        });
+      },
     },
     {
       text: audioPrefs.musicEnabled ? tr.audio.musicOn : tr.audio.musicOff,
-      onPress: () => { void setMusicEnabled(!audioPrefs.musicEnabled).then(setAudioPrefs); },
+      onPress: () => {
+        void setMusicEnabled(!audioPrefs.musicEnabled).then(next => {
+          setAudioPrefs(next);
+          if (next.musicEnabled) void startLobbyMusic();
+        });
+      },
     },
     { text: tr.lobby.signOut, style: "destructive", onPress: () => { void signOut().then(() => router.replace("/")); } },
   ]);
