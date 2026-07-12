@@ -96,7 +96,7 @@ export default function Login() {
     };
   }, []);
   const formPadBottom = Platform.OS === "ios"
-    ? (keyboardHeight > 0 ? 16 : 12)
+    ? (keyboardHeight > 0 ? 26 : 12)
     : Math.max(12, keyboardHeight > 0 ? keyboardHeight + 10 - insets.bottom : 12);
 
   if (authLoading) return <SafeAreaView style={styles.loading}><ActivityIndicator color={colors.primary} size="large" /><Text style={styles.loadingText}>{tr.auth.checking}</Text></SafeAreaView>;

@@ -430,7 +430,7 @@ export default function Match() {
   // iOS: only a small gap — auto keyboard insets already shift the scroll view.
   // Android: full keyboard height pad so the field sits above the keyboard.
   const pagePadBottom = Platform.OS === "ios"
-    ? (keyboardHeight > 0 ? keyboardGap + 6 : 40)
+    ? (keyboardHeight > 0 ? keyboardGap + 16 : 40)
     : Math.max(40, keyboardHeight > 0 ? keyboardHeight + keyboardGap - insets.bottom : 40);
 
   return <SafeAreaView style={[styles.safe, { backgroundColor: pitchTheme.background }]}>
