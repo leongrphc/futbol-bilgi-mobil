@@ -5,10 +5,14 @@ import { preloadSounds, startLobbyMusic, stopLobbyMusic } from "@/audio/sounds";
 
 export default function TabsLayout() {
   useEffect(() => {
-    void preloadSounds();
-    void startLobbyMusic();
+    let cancelled = false;
+    void (async () => {
+      await preloadSounds();
+      if (!cancelled) await startLobbyMusic();
+    })();
     // Pause only when leaving the whole tab shell (e.g. match). Keep position.
     return () => {
+      cancelled = true;
       void stopLobbyMusic();
     };
   }, []);

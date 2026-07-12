@@ -1,5 +1,4 @@
-import { Platform } from "react-native";
-import { Audio, type AVPlaybackSource } from "expo-av";
+import { Audio, type AVPlaybackSource, type AVPlaybackStatus } from "expo-av";
 import { getAudioPrefsSync, loadAudioPrefs, subscribeAudioPrefs } from "./preferences";
 
 export type SfxId =
@@ -36,27 +35,50 @@ const sfxSounds = new Map<SfxId, Audio.Sound>();
 let lobbySound: Audio.Sound | null = null;
 let suddenDeathBedSound: Audio.Sound | null = null;
 let configured = false;
-let ready: Promise<void> | null = null;
 let lobbyWanted = false;
 let suddenDeathBedWanted = false;
 let lobbyPositionMs = 0;
+
+/** Serialize every native audio call — Android throws "Player does not exist" on races. */
+let queue: Promise<void> = Promise.resolve();
+function runExclusive<T>(fn: () => Promise<T>): Promise<T> {
+  const next = queue.then(fn, fn);
+  queue = next.then(
+    () => undefined,
+    () => undefined,
+  );
+  return next;
+}
 
 function warn(message: string, error?: unknown) {
   console.warn(`[audio] ${message}`, error ?? "");
 }
 
+function isMissingPlayerError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return /player does not exist/i.test(message);
+}
+
+async function safeUnload(sound: Audio.Sound | null | undefined) {
+  if (!sound) return;
+  try {
+    await sound.unloadAsync();
+  } catch {
+    // already gone
+  }
+}
+
 async function ensureConfigured() {
   if (configured) return;
   try {
-    // expo-av is reliable on Android Expo Go; expo-audio was silent there.
     await Audio.setAudioModeAsync({
       allowsRecordingIOS: false,
       playsInSilentModeIOS: false,
       playThroughEarpieceAndroid: false,
       staysActiveInBackground: false,
       shouldDuckAndroid: true,
-      interruptionModeIOS: 1, // DuckOthers
-      interruptionModeAndroid: 1, // DuckOthers
+      interruptionModeIOS: 1,
+      interruptionModeAndroid: 1,
     });
     configured = true;
   } catch (error) {
@@ -64,7 +86,7 @@ async function ensureConfigured() {
   }
 }
 
-async function loadSound(
+async function createSound(
   source: AVPlaybackSource,
   opts: { loop?: boolean; volume?: number } = {},
 ): Promise<Audio.Sound> {
@@ -72,7 +94,7 @@ async function loadSound(
     source,
     {
       shouldPlay: false,
-      isLooping: opts.loop ?? false,
+      isLooping: !!opts.loop,
       volume: opts.volume ?? 1,
       progressUpdateIntervalMillis: 500,
     },
@@ -82,261 +104,237 @@ async function loadSound(
   return sound;
 }
 
-async function ensurePlayers() {
-  if (ready) return ready;
-  ready = (async () => {
+async function getStatus(sound: Audio.Sound): Promise<AVPlaybackStatus | null> {
+  try {
+    return await sound.getStatusAsync();
+  } catch (error) {
+    if (isMissingPlayerError(error)) return null;
+    throw error;
+  }
+}
+
+async function playFrom(
+  sound: Audio.Sound,
+  positionMs: number | null,
+): Promise<void> {
+  if (positionMs != null) {
     try {
-      await loadAudioPrefs();
-      await ensureConfigured();
-
-      await Promise.all(
-        (Object.keys(sfxModules) as SfxId[]).map(async id => {
-          if (sfxSounds.has(id)) return;
-          try {
-            const sound = await loadSound(sfxModules[id], { volume: 1 });
-            sfxSounds.set(id, sound);
-          } catch (error) {
-            warn(`load sfx failed: ${id}`, error);
-          }
-        }),
-      );
-
-      if (!lobbySound) {
-        try {
-          lobbySound = await loadSound(lobbyModule, { loop: true, volume: 0.75 });
-        } catch (error) {
-          warn("load lobby music failed", error);
-        }
-      }
-
-      if (!suddenDeathBedSound) {
-        try {
-          suddenDeathBedSound = await loadSound(suddenDeathBedModule, { loop: true, volume: 0.6 });
-        } catch (error) {
-          warn("load sudden death bed failed", error);
-        }
-      }
-    } catch (error) {
-      ready = null;
-      warn("audio init failed", error);
-      throw error;
+      await sound.setPositionAsync(Math.max(0, positionMs));
+    } catch {
+      // ignore seek failures and still try play
     }
-  })();
-  return ready;
+  }
+  await sound.playAsync();
+}
+
+async function ensureSfx(id: SfxId): Promise<Audio.Sound> {
+  const existing = sfxSounds.get(id);
+  if (existing) {
+    const status = await getStatus(existing);
+    if (status?.isLoaded) return existing;
+    await safeUnload(existing);
+    sfxSounds.delete(id);
+  }
+  const sound = await createSound(sfxModules[id], { volume: 1 });
+  sfxSounds.set(id, sound);
+  return sound;
+}
+
+async function ensureLobbySound(): Promise<Audio.Sound> {
+  if (lobbySound) {
+    const status = await getStatus(lobbySound);
+    if (status?.isLoaded) return lobbySound;
+    await safeUnload(lobbySound);
+    lobbySound = null;
+  }
+  lobbySound = await createSound(lobbyModule, { loop: true, volume: 0.75 });
+  return lobbySound;
+}
+
+async function ensureSuddenDeathBedSound(): Promise<Audio.Sound> {
+  if (suddenDeathBedSound) {
+    const status = await getStatus(suddenDeathBedSound);
+    if (status?.isLoaded) return suddenDeathBedSound;
+    await safeUnload(suddenDeathBedSound);
+    suddenDeathBedSound = null;
+  }
+  suddenDeathBedSound = await createSound(suddenDeathBedModule, { loop: true, volume: 0.6 });
+  return suddenDeathBedSound;
 }
 
 async function replaySfx(id: SfxId) {
-  let sound = sfxSounds.get(id);
-  if (!sound) {
-    try {
-      sound = await loadSound(sfxModules[id], { volume: 1 });
-      sfxSounds.set(id, sound);
-    } catch (error) {
-      warn(`create sfx failed: ${id}`, error);
-      return;
-    }
-  }
+  await ensureConfigured();
   try {
-    const status = await sound.getStatusAsync();
-    if (!status.isLoaded) {
-      await sound.loadAsync(sfxModules[id], { shouldPlay: false, volume: 1 }, true);
-    }
-    await sound.setPositionAsync(0);
-    await sound.playAsync();
+    const sound = await ensureSfx(id);
+    await playFrom(sound, 0);
   } catch (error) {
-    // Recreate once — Android Expo Go can drop native handles after reload.
-    try {
-      await sound.unloadAsync();
-    } catch {
-      // ignore
+    if (isMissingPlayerError(error)) {
+      sfxSounds.delete(id);
+      try {
+        const sound = await ensureSfx(id);
+        await playFrom(sound, 0);
+        return;
+      } catch (retryError) {
+        warn(`play sfx failed: ${id}`, retryError);
+        return;
+      }
     }
-    try {
-      const next = await loadSound(sfxModules[id], { volume: 1 });
-      sfxSounds.set(id, next);
-      await next.playAsync();
-    } catch (retryError) {
-      warn(`play sfx failed: ${id}`, retryError);
-    }
+    warn(`play sfx failed: ${id}`, error);
   }
-}
-
-export async function preloadSounds() {
-  try {
-    await ensurePlayers();
-  } catch {
-    // UI continues without audio
-  }
-}
-
-export async function playSfx(id: SfxId) {
-  try {
-    await ensureConfigured();
-    await ensurePlayers();
-  } catch {
-    return;
-  }
-  if (!getAudioPrefsSync().sfxEnabled) return;
-  await replaySfx(id);
 }
 
 async function syncLobbyMusic() {
-  try {
-    await ensureConfigured();
-    await ensurePlayers();
-  } catch {
-    return;
-  }
-  if (!lobbySound) return;
+  await loadAudioPrefs();
+  await ensureConfigured();
   const enabled = lobbyWanted && getAudioPrefsSync().musicEnabled;
+
   try {
-    const status = await lobbySound.getStatusAsync();
-    if (enabled) {
-      if (!status.isLoaded) {
-        await lobbySound.loadAsync(lobbyModule, { shouldPlay: false, isLooping: true, volume: 0.75 }, true);
-      }
-      // Resume mid-track when returning from match; keep position across tabs.
-      if (status.isLoaded && !status.isPlaying) {
-        const pos = Math.max(0, lobbyPositionMs);
-        try {
-          await lobbySound.setPositionAsync(pos);
-        } catch {
-          // ignore seek errors
-        }
-        await lobbySound.playAsync();
-      } else if (status.isLoaded && status.isPlaying) {
-        // already going
+    if (!enabled) {
+      if (!lobbySound) return;
+      const status = await getStatus(lobbySound);
+      if (status?.isLoaded) {
+        lobbyPositionMs = status.positionMillis ?? lobbyPositionMs;
+        if (status.isPlaying) await lobbySound.pauseAsync();
       } else {
-        await lobbySound.playAsync();
+        await safeUnload(lobbySound);
+        lobbySound = null;
       }
-    } else if (status.isLoaded && status.isPlaying) {
-      lobbyPositionMs = status.positionMillis ?? lobbyPositionMs;
-      await lobbySound.pauseAsync();
-    } else if (status.isLoaded) {
-      lobbyPositionMs = status.positionMillis ?? lobbyPositionMs;
+      return;
     }
+
+    const sound = await ensureLobbySound();
+    const status = await getStatus(sound);
+    if (!status?.isLoaded) {
+      await safeUnload(sound);
+      lobbySound = null;
+      const rebuilt = await ensureLobbySound();
+      await playFrom(rebuilt, lobbyPositionMs);
+      return;
+    }
+    if (status.isPlaying) return;
+    await playFrom(sound, lobbyPositionMs);
   } catch (error) {
     warn("lobby music sync failed", error);
+    await safeUnload(lobbySound);
+    lobbySound = null;
+    if (!(lobbyWanted && getAudioPrefsSync().musicEnabled)) return;
     try {
-      await lobbySound?.unloadAsync();
-    } catch {
-      // ignore
-    }
-    try {
-      lobbySound = await loadSound(lobbyModule, { loop: true, volume: 0.75 });
-      if (lobbyWanted && getAudioPrefsSync().musicEnabled) {
-        await lobbySound.setPositionAsync(Math.max(0, lobbyPositionMs));
-        await lobbySound.playAsync();
-      }
+      const rebuilt = await ensureLobbySound();
+      await playFrom(rebuilt, lobbyPositionMs);
     } catch (retryError) {
       warn("lobby music recreate failed", retryError);
     }
   }
 }
 
+async function syncSuddenDeathBed() {
+  await ensureConfigured();
+  const enabled = suddenDeathBedWanted && getAudioPrefsSync().sfxEnabled;
+
+  try {
+    if (!enabled) {
+      if (!suddenDeathBedSound) return;
+      const status = await getStatus(suddenDeathBedSound);
+      if (status?.isLoaded) {
+        if (status.isPlaying) await suddenDeathBedSound.pauseAsync();
+        try {
+          await suddenDeathBedSound.setPositionAsync(0);
+        } catch {
+          // ignore
+        }
+      } else {
+        await safeUnload(suddenDeathBedSound);
+        suddenDeathBedSound = null;
+      }
+      return;
+    }
+
+    const sound = await ensureSuddenDeathBedSound();
+    const status = await getStatus(sound);
+    if (!status?.isLoaded) {
+      await safeUnload(sound);
+      suddenDeathBedSound = null;
+      const rebuilt = await ensureSuddenDeathBedSound();
+      await playFrom(rebuilt, 0);
+      return;
+    }
+    if (status.isPlaying) return;
+    const fromStart = (status.positionMillis ?? 0) <= 50;
+    await playFrom(sound, fromStart ? 0 : null);
+  } catch (error) {
+    warn("sudden death bed sync failed", error);
+    await safeUnload(suddenDeathBedSound);
+    suddenDeathBedSound = null;
+  }
+}
+
+export async function preloadSounds() {
+  // Warm audio mode only. Sounds load lazily on first use (avoids Android player races).
+  await runExclusive(async () => {
+    await loadAudioPrefs();
+    await ensureConfigured();
+  });
+}
+
+export async function playSfx(id: SfxId) {
+  if (!getAudioPrefsSync().sfxEnabled) {
+    // Prefs may not be loaded yet on cold start.
+    await runExclusive(async () => {
+      await loadAudioPrefs();
+    });
+    if (!getAudioPrefsSync().sfxEnabled) return;
+  }
+  await runExclusive(() => replaySfx(id));
+}
+
 export async function startLobbyMusic() {
   lobbyWanted = true;
-  await syncLobbyMusic();
+  await runExclusive(() => syncLobbyMusic());
 }
 
 export async function stopLobbyMusic() {
   lobbyWanted = false;
-  // Capture position before pause so match return can resume.
-  try {
+  await runExclusive(async () => {
     if (lobbySound) {
-      const status = await lobbySound.getStatusAsync();
-      if (status.isLoaded) lobbyPositionMs = status.positionMillis ?? lobbyPositionMs;
+      const status = await getStatus(lobbySound);
+      if (status?.isLoaded) lobbyPositionMs = status.positionMillis ?? lobbyPositionMs;
     }
-  } catch {
-    // ignore
-  }
-  await syncLobbyMusic();
+    await syncLobbyMusic();
+  });
 }
 
 export async function restartLobbyMusic() {
   lobbyWanted = true;
   lobbyPositionMs = 0;
-  try {
-    await ensureConfigured();
-    await ensurePlayers();
-    if (!lobbySound) return;
-    await lobbySound.setPositionAsync(0);
-    if (getAudioPrefsSync().musicEnabled) await lobbySound.playAsync();
-  } catch (error) {
-    warn("lobby music restart failed", error);
-  }
-}
-
-async function syncSuddenDeathBed() {
-  try {
-    await ensureConfigured();
-    await ensurePlayers();
-  } catch {
-    return;
-  }
-  if (!suddenDeathBedSound) return;
-  const enabled = suddenDeathBedWanted && getAudioPrefsSync().sfxEnabled;
-  try {
-    const status = await suddenDeathBedSound.getStatusAsync();
-    if (enabled) {
-      if (!status.isLoaded) {
-        await suddenDeathBedSound.loadAsync(
-          suddenDeathBedModule,
-          { shouldPlay: false, isLooping: true, volume: 0.6 },
-          true,
-        );
-      }
-      if (status.isLoaded && (status.positionMillis ?? 0) <= 50) {
-        await suddenDeathBedSound.setPositionAsync(0);
-      }
-      if (!(status.isLoaded && status.isPlaying)) {
-        await suddenDeathBedSound.playAsync();
-      }
-    } else if (status.isLoaded && status.isPlaying) {
-      await suddenDeathBedSound.pauseAsync();
-    }
-  } catch (error) {
-    warn("sudden death bed sync failed", error);
-  }
+  await runExclusive(() => syncLobbyMusic());
 }
 
 export async function startSuddenDeathBed() {
   suddenDeathBedWanted = true;
-  try {
-    await ensurePlayers();
+  await runExclusive(async () => {
     if (suddenDeathBedSound) {
-      try {
-        await suddenDeathBedSound.setPositionAsync(0);
-      } catch {
-        // ignore
+      const status = await getStatus(suddenDeathBedSound);
+      if (status?.isLoaded) {
+        try {
+          await suddenDeathBedSound.setPositionAsync(0);
+        } catch {
+          // ignore
+        }
       }
     }
-  } catch {
-    // ignore
-  }
-  await syncSuddenDeathBed();
+    await syncSuddenDeathBed();
+  });
 }
 
 export async function stopSuddenDeathBed() {
   suddenDeathBedWanted = false;
-  try {
-    await ensurePlayers();
-    if (suddenDeathBedSound) {
-      const status = await suddenDeathBedSound.getStatusAsync();
-      if (status.isLoaded) {
-        await suddenDeathBedSound.pauseAsync();
-        await suddenDeathBedSound.setPositionAsync(0);
-      }
-    }
-  } catch {
-    // ignore
-  }
-  await syncSuddenDeathBed();
+  await runExclusive(() => syncSuddenDeathBed());
 }
 
+// Keep prefs changes serialized with the same queue.
 subscribeAudioPrefs(() => {
-  void syncLobbyMusic();
-  void syncSuddenDeathBed();
+  void runExclusive(async () => {
+    await syncLobbyMusic();
+    await syncSuddenDeathBed();
+  });
 });
-
-// Avoid unused Platform warning if tree-shaken oddly in some builds.
-void Platform.OS;
