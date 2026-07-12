@@ -1,9 +1,11 @@
 import { Platform } from "react-native";
+import { Asset } from "expo-asset";
 import {
   createAudioPlayer,
   setAudioModeAsync,
   setIsAudioActiveAsync,
   type AudioPlayer,
+  type AudioSource,
 } from "expo-audio";
 import { getAudioPrefsSync, loadAudioPrefs, subscribeAudioPrefs } from "./preferences";
 
@@ -20,7 +22,7 @@ export type SfxId =
   | "match_found"
   | "lock";
 
-const sources: Record<SfxId, number> = {
+const moduleSources: Record<SfxId, number> = {
   correct: require("../../assets/sfx/correct.wav"),
   wrong: require("../../assets/sfx/wrong.wav"),
   tick: require("../../assets/sfx/tick.wav"),
@@ -34,10 +36,10 @@ const sources: Record<SfxId, number> = {
   lock: require("../../assets/sfx/lock.wav"),
 };
 
-// Compact AAC beds — large WAVs were slow to stage on Android.
-const lobbySource = require("../../assets/sfx/lobby_loop.m4a");
-const suddenDeathBedSource = require("../../assets/sfx/sudden_death_bed.m4a");
+const lobbyModule = require("../../assets/sfx/lobby_loop.m4a");
+const suddenDeathBedModule = require("../../assets/sfx/sudden_death_bed.m4a");
 
+const resolved = new Map<string, AudioSource>();
 const players = new Map<SfxId, AudioPlayer>();
 let lobbyPlayer: AudioPlayer | null = null;
 let suddenDeathBedPlayer: AudioPlayer | null = null;
@@ -55,11 +57,10 @@ async function ensureConfigured() {
   try {
     await setIsAudioActiveAsync(true);
     await setAudioModeAsync({
-      // iOS: honor hardware silent switch (user preference).
-      // Android: false also mutes when ringer is vibrate — games should still play media.
-      playsInSilentMode: Platform.OS !== "ios" ? true : false,
-      // Short SFX + beds should mix; exclusive focus can fail silently on some OEMs.
-      interruptionMode: "mixWithOthers",
+      // Android mute/vibrate still needs media playback for games.
+      // iOS keeps hardware silent-switch respect.
+      playsInSilentMode: Platform.OS === "android",
+      interruptionMode: "duckOthers",
       shouldPlayInBackground: false,
       allowsRecording: false,
       shouldRouteThroughEarpiece: false,
@@ -70,12 +71,37 @@ async function ensureConfigured() {
   }
 }
 
-function makePlayer(source: number, loop = false, volume = loop ? 0.7 : 1): AudioPlayer {
-  // Local bundled assets: resolve synchronously. downloadFirst starts with null source
-  // and races the first play() on Android.
+/**
+ * Android Expo Go often cannot play Metro `require()` URIs directly.
+ * Force expo-asset download so ExoPlayer gets a real local file URI.
+ */
+async function resolveLocalSource(moduleId: number, key: string): Promise<AudioSource> {
+  const cached = resolved.get(key);
+  if (cached) return cached;
+
+  const asset = Asset.fromModule(moduleId);
+  try {
+    if (!asset.localUri) await asset.downloadAsync();
+  } catch (error) {
+    warn(`asset download failed: ${key}`, error);
+  }
+
+  const uri = asset.localUri ?? asset.uri;
+  if (!uri) throw new Error(`No URI for audio asset ${key}`);
+
+  // Prefer file:// local path on device; keep assetId as fallback metadata.
+  const source: AudioSource = {
+    uri,
+    assetId: moduleId,
+  };
+  resolved.set(key, source);
+  return source;
+}
+
+function makePlayer(source: AudioSource, loop = false, volume = loop ? 0.75 : 1): AudioPlayer {
   const player = createAudioPlayer(source, {
     downloadFirst: false,
-    updateInterval: 1000,
+    updateInterval: 500,
     keepAudioSessionActive: true,
   });
   player.loop = loop;
@@ -87,6 +113,7 @@ function makePlayer(source: number, loop = false, volume = loop ? 0.7 : 1): Audi
 function playerReady(player: AudioPlayer): boolean {
   if (player.isLoaded) return true;
   if (Number.isFinite(player.duration) && player.duration > 0) return true;
+  // Android sometimes reports ready state only after prepare; allow brief play attempt.
   return false;
 }
 
@@ -102,7 +129,8 @@ function waitForLoad(player: AudioPlayer, timeoutMs = 6_000): Promise<boolean> {
       }
       if (Date.now() - started >= timeoutMs) {
         clearInterval(timer);
-        resolve(false);
+        // Last chance: try play even if isLoaded never flipped (some Android builds).
+        resolve(true);
       }
     }, 40);
   });
@@ -114,11 +142,24 @@ async function ensurePlayers() {
     try {
       await loadAudioPrefs();
       await ensureConfigured();
-      for (const id of Object.keys(sources) as SfxId[]) {
-        if (!players.has(id)) players.set(id, makePlayer(sources[id]));
-      }
-      if (!lobbyPlayer) lobbyPlayer = makePlayer(lobbySource, true, 0.7);
-      if (!suddenDeathBedPlayer) suddenDeathBedPlayer = makePlayer(suddenDeathBedSource, true, 0.55);
+
+      // Resolve ALL assets to local URIs before creating players (critical on Android Expo Go).
+      await Promise.all([
+        ...Object.entries(moduleSources).map(async ([id, moduleId]) => {
+          const source = await resolveLocalSource(moduleId, id);
+          if (!players.has(id as SfxId)) {
+            players.set(id as SfxId, makePlayer(source, false, 1));
+          }
+        }),
+        (async () => {
+          const source = await resolveLocalSource(lobbyModule, "lobby_loop");
+          if (!lobbyPlayer) lobbyPlayer = makePlayer(source, true, 0.75);
+        })(),
+        (async () => {
+          const source = await resolveLocalSource(suddenDeathBedModule, "sudden_death_bed");
+          if (!suddenDeathBedPlayer) suddenDeathBedPlayer = makePlayer(source, true, 0.6);
+        })(),
+      ]);
     } catch (error) {
       ready = null;
       warn("audio player init failed", error);
@@ -129,13 +170,21 @@ async function ensurePlayers() {
 }
 
 async function forcePlay(player: AudioPlayer, fromStart: boolean) {
-  const loaded = await waitForLoad(player, 6_000);
-  if (!loaded) return false;
+  await waitForLoad(player, 6_000);
   try {
     player.muted = false;
+    player.volume = Math.max(player.volume, fromStart ? 1 : player.volume);
     if (fromStart) {
-      player.pause();
-      await player.seekTo(0);
+      try {
+        player.pause();
+      } catch {
+        // ignore
+      }
+      try {
+        await player.seekTo(0);
+      } catch {
+        // some Android builds reject seek before first buffer; continue to play()
+      }
     }
     player.play();
     return true;
@@ -145,39 +194,34 @@ async function forcePlay(player: AudioPlayer, fromStart: boolean) {
   }
 }
 
-async function recreateAndPlay(
-  current: AudioPlayer | null,
-  source: number,
-  loop: boolean,
-  volume: number,
-  fromStart: boolean,
-): Promise<AudioPlayer | null> {
-  if (current) {
+async function rebuildSfx(id: SfxId): Promise<AudioPlayer | null> {
+  const old = players.get(id);
+  if (old) {
     try {
-      current.pause();
-      current.remove();
+      old.pause();
+      old.remove();
     } catch {
       // ignore
     }
   }
-  const next = makePlayer(source, loop, volume);
-  const ok = await forcePlay(next, fromStart);
-  if (!ok) {
-    try {
-      next.remove();
-    } catch {
-      // ignore
-    }
+  try {
+    const source = await resolveLocalSource(moduleSources[id], id);
+    // bust cache if uri was bad
+    resolved.delete(id);
+    const fresh = await resolveLocalSource(moduleSources[id], id);
+    const player = makePlayer(fresh ?? source, false, 1);
+    players.set(id, player);
+    const ok = await forcePlay(player, true);
+    return ok ? player : null;
+  } catch (error) {
+    warn(`rebuild sfx failed: ${id}`, error);
     return null;
   }
-  return next;
 }
 
 export async function preloadSounds() {
   try {
     await ensurePlayers();
-    if (lobbyPlayer) void waitForLoad(lobbyPlayer, 8_000);
-    if (suddenDeathBedPlayer) void waitForLoad(suddenDeathBedPlayer, 8_000);
   } catch {
     // keep UI running without audio
   }
@@ -191,13 +235,13 @@ export async function playSfx(id: SfxId) {
     return;
   }
   if (!getAudioPrefsSync().sfxEnabled) return;
-  let player = players.get(id);
-  if (!player) return;
-  const ok = await forcePlay(player, true);
-  if (!ok) {
-    const rebuilt = await recreateAndPlay(player, sources[id], false, 1, true);
-    if (rebuilt) players.set(id, rebuilt);
+  const player = players.get(id);
+  if (!player) {
+    await rebuildSfx(id);
+    return;
   }
+  const ok = await forcePlay(player, true);
+  if (!ok) await rebuildSfx(id);
 }
 
 async function syncLobbyMusic() {
@@ -213,8 +257,15 @@ async function syncLobbyMusic() {
     if (enabled) {
       const ok = await forcePlay(lobbyPlayer, false);
       if (!ok) {
-        lobbyPlayer = await recreateAndPlay(lobbyPlayer, lobbySource, true, 0.7, true);
-        if (!lobbyPlayer) warn("lobby music failed to start on Android/iOS");
+        try {
+          lobbyPlayer.remove();
+        } catch {
+          // ignore
+        }
+        resolved.delete("lobby_loop");
+        const source = await resolveLocalSource(lobbyModule, "lobby_loop");
+        lobbyPlayer = makePlayer(source, true, 0.75);
+        await forcePlay(lobbyPlayer, true);
       }
     } else if (lobbyPlayer.playing) {
       lobbyPlayer.pause();
@@ -224,29 +275,23 @@ async function syncLobbyMusic() {
   }
 }
 
-/** Keep bed playing across tabs; call once from tabs shell. */
 export async function startLobbyMusic() {
   lobbyWanted = true;
   await syncLobbyMusic();
 }
 
-/** Pause bed (match / leave tabs). Position kept for resume. */
 export async function stopLobbyMusic() {
   lobbyWanted = false;
   await syncLobbyMusic();
 }
 
-/** Hard restart from 0 — only if user explicitly restarts music later. */
 export async function restartLobbyMusic() {
   lobbyWanted = true;
   try {
     await ensureConfigured();
     await ensurePlayers();
     if (!lobbyPlayer) return;
-    const ok = await forcePlay(lobbyPlayer, true);
-    if (!ok) {
-      lobbyPlayer = await recreateAndPlay(lobbyPlayer, lobbySource, true, 0.7, true);
-    }
+    await forcePlay(lobbyPlayer, true);
   } catch (error) {
     warn("lobby music restart failed", error);
   }
@@ -266,14 +311,15 @@ async function syncSuddenDeathBed() {
       const fromStart = suddenDeathBedPlayer.currentTime <= 0.05;
       const ok = await forcePlay(suddenDeathBedPlayer, fromStart);
       if (!ok) {
-        suddenDeathBedPlayer = await recreateAndPlay(
-          suddenDeathBedPlayer,
-          suddenDeathBedSource,
-          true,
-          0.55,
-          true,
-        );
-        if (!suddenDeathBedPlayer) warn("sudden death bed failed to start");
+        try {
+          suddenDeathBedPlayer.remove();
+        } catch {
+          // ignore
+        }
+        resolved.delete("sudden_death_bed");
+        const source = await resolveLocalSource(suddenDeathBedModule, "sudden_death_bed");
+        suddenDeathBedPlayer = makePlayer(source, true, 0.6);
+        await forcePlay(suddenDeathBedPlayer, true);
       }
     } else if (suddenDeathBedPlayer.playing) {
       suddenDeathBedPlayer.pause();
@@ -283,16 +329,13 @@ async function syncSuddenDeathBed() {
   }
 }
 
-/** Loop Mysterious bass pulse for the whole sudden-death stretch. */
 export async function startSuddenDeathBed() {
   suddenDeathBedWanted = true;
   try {
     await ensurePlayers();
-    if (suddenDeathBedPlayer) {
-      await forcePlay(suddenDeathBedPlayer, true);
-    }
+    if (suddenDeathBedPlayer) await forcePlay(suddenDeathBedPlayer, true);
   } catch {
-    // ensurePlayers already warned
+    // ignore
   }
   await syncSuddenDeathBed();
 }
