@@ -1,4 +1,10 @@
-import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from "expo-audio";
+import { Platform } from "react-native";
+import {
+  createAudioPlayer,
+  setAudioModeAsync,
+  setIsAudioActiveAsync,
+  type AudioPlayer,
+} from "expo-audio";
 import { getAudioPrefsSync, loadAudioPrefs, subscribeAudioPrefs } from "./preferences";
 
 export type SfxId =
@@ -28,7 +34,7 @@ const sources: Record<SfxId, number> = {
   lock: require("../../assets/sfx/lock.wav"),
 };
 
-// Compact AAC beds — large WAVs timed out on Android before isLoaded.
+// Compact AAC beds — large WAVs were slow to stage on Android.
 const lobbySource = require("../../assets/sfx/lobby_loop.m4a");
 const suddenDeathBedSource = require("../../assets/sfx/sudden_death_bed.m4a");
 
@@ -39,13 +45,6 @@ let configured = false;
 let ready: Promise<void> | null = null;
 let lobbyWanted = false;
 let suddenDeathBedWanted = false;
-let warnedOnce = false;
-
-function warnOnce(message: string, error?: unknown) {
-  if (warnedOnce) return;
-  warnedOnce = true;
-  console.warn(`[audio] ${message}`, error ?? "");
-}
 
 function warn(message: string, error?: unknown) {
   console.warn(`[audio] ${message}`, error ?? "");
@@ -54,37 +53,44 @@ function warn(message: string, error?: unknown) {
 async function ensureConfigured() {
   if (configured) return;
   try {
+    await setIsAudioActiveAsync(true);
     await setAudioModeAsync({
-      // Respect hardware silent / Android ringer mute (user preference).
-      playsInSilentMode: false,
-      // Request focus so Android actually routes short UI sounds.
-      interruptionMode: "duckOthers",
+      // iOS: honor hardware silent switch (user preference).
+      // Android: false also mutes when ringer is vibrate — games should still play media.
+      playsInSilentMode: Platform.OS !== "ios" ? true : false,
+      // Short SFX + beds should mix; exclusive focus can fail silently on some OEMs.
+      interruptionMode: "mixWithOthers",
       shouldPlayInBackground: false,
       allowsRecording: false,
       shouldRouteThroughEarpiece: false,
     });
     configured = true;
   } catch (error) {
-    warnOnce("setAudioModeAsync failed — rebuild app if expo-audio native module missing", error);
+    warn("setAudioModeAsync failed — rebuild if expo-audio native module missing", error);
   }
 }
 
-function makePlayer(source: number, loop = false, volume = loop ? 0.55 : 1): AudioPlayer {
-  // downloadFirst helps local require() assets resolve to a playable URI on device.
-  const player = createAudioPlayer(source, { downloadFirst: true, updateInterval: 1000 });
+function makePlayer(source: number, loop = false, volume = loop ? 0.7 : 1): AudioPlayer {
+  // Local bundled assets: resolve synchronously. downloadFirst starts with null source
+  // and races the first play() on Android.
+  const player = createAudioPlayer(source, {
+    downloadFirst: false,
+    updateInterval: 1000,
+    keepAudioSessionActive: true,
+  });
   player.loop = loop;
   player.volume = volume;
+  player.muted = false;
   return player;
 }
 
 function playerReady(player: AudioPlayer): boolean {
-  // isLoaded can lag on Android; duration/currentTime becoming finite is enough to play.
   if (player.isLoaded) return true;
   if (Number.isFinite(player.duration) && player.duration > 0) return true;
   return false;
 }
 
-function waitForLoad(player: AudioPlayer, timeoutMs = 8_000): Promise<boolean> {
+function waitForLoad(player: AudioPlayer, timeoutMs = 6_000): Promise<boolean> {
   if (playerReady(player)) return Promise.resolve(true);
   return new Promise(resolve => {
     const started = Date.now();
@@ -98,7 +104,7 @@ function waitForLoad(player: AudioPlayer, timeoutMs = 8_000): Promise<boolean> {
         clearInterval(timer);
         resolve(false);
       }
-    }, 50);
+    }, 40);
   });
 }
 
@@ -111,38 +117,67 @@ async function ensurePlayers() {
       for (const id of Object.keys(sources) as SfxId[]) {
         if (!players.has(id)) players.set(id, makePlayer(sources[id]));
       }
-      if (!lobbyPlayer) lobbyPlayer = makePlayer(lobbySource, true, 0.55);
-      if (!suddenDeathBedPlayer) suddenDeathBedPlayer = makePlayer(suddenDeathBedSource, true, 0.48);
+      if (!lobbyPlayer) lobbyPlayer = makePlayer(lobbySource, true, 0.7);
+      if (!suddenDeathBedPlayer) suddenDeathBedPlayer = makePlayer(suddenDeathBedSource, true, 0.55);
     } catch (error) {
       ready = null;
-      warnOnce("audio player init failed", error);
+      warn("audio player init failed", error);
       throw error;
     }
   })();
   return ready;
 }
 
-async function replay(player: AudioPlayer) {
-  const loaded = await waitForLoad(player, 4_000);
-  if (!loaded) {
-    warn("audio asset still not loaded — check metro asset + native rebuild");
-    return;
-  }
+async function forcePlay(player: AudioPlayer, fromStart: boolean) {
+  const loaded = await waitForLoad(player, 6_000);
+  if (!loaded) return false;
   try {
-    player.pause();
-    await player.seekTo(0);
+    player.muted = false;
+    if (fromStart) {
+      player.pause();
+      await player.seekTo(0);
+    }
     player.play();
+    return true;
   } catch (error) {
     warn("play failed", error);
+    return false;
   }
+}
+
+async function recreateAndPlay(
+  current: AudioPlayer | null,
+  source: number,
+  loop: boolean,
+  volume: number,
+  fromStart: boolean,
+): Promise<AudioPlayer | null> {
+  if (current) {
+    try {
+      current.pause();
+      current.remove();
+    } catch {
+      // ignore
+    }
+  }
+  const next = makePlayer(source, loop, volume);
+  const ok = await forcePlay(next, fromStart);
+  if (!ok) {
+    try {
+      next.remove();
+    } catch {
+      // ignore
+    }
+    return null;
+  }
+  return next;
 }
 
 export async function preloadSounds() {
   try {
     await ensurePlayers();
-    // Warm beds in background so first lobby focus is ready on Android.
-    if (lobbyPlayer) void waitForLoad(lobbyPlayer, 10_000);
-    if (suddenDeathBedPlayer) void waitForLoad(suddenDeathBedPlayer, 10_000);
+    if (lobbyPlayer) void waitForLoad(lobbyPlayer, 8_000);
+    if (suddenDeathBedPlayer) void waitForLoad(suddenDeathBedPlayer, 8_000);
   } catch {
     // keep UI running without audio
   }
@@ -150,18 +185,24 @@ export async function preloadSounds() {
 
 export async function playSfx(id: SfxId) {
   try {
+    await ensureConfigured();
     await ensurePlayers();
   } catch {
     return;
   }
   if (!getAudioPrefsSync().sfxEnabled) return;
-  const player = players.get(id);
+  let player = players.get(id);
   if (!player) return;
-  await replay(player);
+  const ok = await forcePlay(player, true);
+  if (!ok) {
+    const rebuilt = await recreateAndPlay(player, sources[id], false, 1, true);
+    if (rebuilt) players.set(id, rebuilt);
+  }
 }
 
 async function syncLobbyMusic() {
   try {
+    await ensureConfigured();
     await ensurePlayers();
   } catch {
     return;
@@ -170,23 +211,11 @@ async function syncLobbyMusic() {
   const enabled = lobbyWanted && getAudioPrefsSync().musicEnabled;
   try {
     if (enabled) {
-      const loaded = await waitForLoad(lobbyPlayer, 10_000);
-      if (!loaded) {
-        // Retry path: recreate player once if first load hung on Android.
-        try {
-          lobbyPlayer.remove();
-        } catch {
-          // ignore
-        }
-        lobbyPlayer = makePlayer(lobbySource, true, 0.55);
-        const retried = await waitForLoad(lobbyPlayer, 10_000);
-        if (!retried) {
-          warn("lobby music asset not loaded");
-          return;
-        }
+      const ok = await forcePlay(lobbyPlayer, false);
+      if (!ok) {
+        lobbyPlayer = await recreateAndPlay(lobbyPlayer, lobbySource, true, 0.7, true);
+        if (!lobbyPlayer) warn("lobby music failed to start on Android/iOS");
       }
-      // Resume from current position — never force seek(0) on tab return.
-      if (!lobbyPlayer.playing) lobbyPlayer.play();
     } else if (lobbyPlayer.playing) {
       lobbyPlayer.pause();
     }
@@ -211,13 +240,13 @@ export async function stopLobbyMusic() {
 export async function restartLobbyMusic() {
   lobbyWanted = true;
   try {
+    await ensureConfigured();
     await ensurePlayers();
     if (!lobbyPlayer) return;
-    const loaded = await waitForLoad(lobbyPlayer, 10_000);
-    if (!loaded) return;
-    lobbyPlayer.pause();
-    await lobbyPlayer.seekTo(0);
-    if (getAudioPrefsSync().musicEnabled) lobbyPlayer.play();
+    const ok = await forcePlay(lobbyPlayer, true);
+    if (!ok) {
+      lobbyPlayer = await recreateAndPlay(lobbyPlayer, lobbySource, true, 0.7, true);
+    }
   } catch (error) {
     warn("lobby music restart failed", error);
   }
@@ -225,35 +254,26 @@ export async function restartLobbyMusic() {
 
 async function syncSuddenDeathBed() {
   try {
+    await ensureConfigured();
     await ensurePlayers();
   } catch {
     return;
   }
   if (!suddenDeathBedPlayer) return;
-  // Match atmosphere: follow SFX mute so "match sounds off" also kills the bed.
   const enabled = suddenDeathBedWanted && getAudioPrefsSync().sfxEnabled;
   try {
     if (enabled) {
-      const loaded = await waitForLoad(suddenDeathBedPlayer, 10_000);
-      if (!loaded) {
-        try {
-          suddenDeathBedPlayer.remove();
-        } catch {
-          // ignore
-        }
-        suddenDeathBedPlayer = makePlayer(suddenDeathBedSource, true, 0.48);
-        const retried = await waitForLoad(suddenDeathBedPlayer, 10_000);
-        if (!retried) {
-          warn("sudden death bed not loaded");
-          return;
-        }
-      }
-      if (!suddenDeathBedPlayer.playing) {
-        // Fresh SD stretch always from the top once; resume mid-loop if already running.
-        if (suddenDeathBedPlayer.currentTime <= 0.05) {
-          await suddenDeathBedPlayer.seekTo(0);
-        }
-        suddenDeathBedPlayer.play();
+      const fromStart = suddenDeathBedPlayer.currentTime <= 0.05;
+      const ok = await forcePlay(suddenDeathBedPlayer, fromStart);
+      if (!ok) {
+        suddenDeathBedPlayer = await recreateAndPlay(
+          suddenDeathBedPlayer,
+          suddenDeathBedSource,
+          true,
+          0.55,
+          true,
+        );
+        if (!suddenDeathBedPlayer) warn("sudden death bed failed to start");
       }
     } else if (suddenDeathBedPlayer.playing) {
       suddenDeathBedPlayer.pause();
@@ -268,8 +288,8 @@ export async function startSuddenDeathBed() {
   suddenDeathBedWanted = true;
   try {
     await ensurePlayers();
-    if (suddenDeathBedPlayer && !suddenDeathBedPlayer.playing) {
-      await suddenDeathBedPlayer.seekTo(0);
+    if (suddenDeathBedPlayer) {
+      await forcePlay(suddenDeathBedPlayer, true);
     }
   } catch {
     // ensurePlayers already warned
