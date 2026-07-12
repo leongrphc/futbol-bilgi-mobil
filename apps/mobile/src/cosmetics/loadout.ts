@@ -25,6 +25,8 @@ export async function getCosmeticLoadout(): Promise<CosmeticLoadout> {
 export const pitchThemes: Record<string, { background: string; surface: string; line: string; accent: string; haze: string }> = {
   "pitch-classic": { background: "#07121C", surface: "#102A2A", line: "#3E7D68", accent: "#59D5A6", haze: "rgba(89,213,166,.09)" },
   "pitch-copper": { background: "#1B1110", surface: "#2D1D19", line: "#98613E", accent: "#F4C95D", haze: "rgba(244,201,93,.10)" },
+  "pitch-floodlight": { background: "#071622", surface: "#123246", line: "#72C7FF", accent: "#C9ECFF", haze: "rgba(114,199,255,.10)" },
+  "pitch-midnight": { background: "#100D20", surface: "#211A3D", line: "#705BA8", accent: "#B896FF", haze: "rgba(184,150,255,.12)" },
 };
 
 export const badgeGlyph = (itemId: string) => ({

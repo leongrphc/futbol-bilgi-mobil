@@ -12,7 +12,7 @@ describe("Supabase server-only data adapter", () => {
       if(name==="match_validate_answer") return Response.json(body.answer_normalized==="mesut ozil");
       return Response.json({club_a_id:"arsenal",club_a_name:"Arsenal",club_b_id:"real",club_b_name:"Real"});
     });
-    vi.stubGlobal("fetch",fetchMock); const data=await createMatchData({SUPABASE_URL:"https://example.supabase.co",SUPABASE_SERVICE_ROLE_KEY:"secret"},"v1");
+    vi.stubGlobal("fetch",fetchMock); const data=await createMatchData({SUPABASE_URL:"https://example.supabase.co",SUPABASE_SERVICE_ROLE_KEY:"secret"},{requestedVersion:"v1"});
     expect(data.versionId).toBe("v1"); const bootstrapCall=fetchMock.mock.calls.find(call=>String(call[0]).includes("get_match_bootstrap")); expect(JSON.parse(String(bootstrapCall?.[1]?.body)).pool_size).toBe(200); expect(data.rules.teamPoolSize).toBe(12); expect(data.rules.answerMs).toBe(18_000); expect(await data.hasPair("arsenal","real")).toBe(true); expect(await data.validate("arsenal","real","mesut ozil")).toBe(true); expect(await data.validate("arsenal","real","mesutt ozil")).toBe(false);
   });
 

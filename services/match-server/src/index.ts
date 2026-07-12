@@ -1,27 +1,34 @@
 import { DurableObject } from "cloudflare:workers";
 import { normalizeAnswer } from "@football-link/answer-normalizer";
 import { MatchEngine, pairKey, type SerializedEngineState } from "@football-link/game-engine";
-import { PROTOCOL_VERSION, type ClientMessage, type MatchPhase, type QuickMessageId, type ServerEventType, type ServerMessage } from "@football-link/shared";
-import { applyMatchModeRules, createMatchData, type MatchData } from "./data";
+import { ALL_EMOTE_IDS, FREE_EMOTE_IDS, PROTOCOL_VERSION, type ClientMessage, type EmoteId, type MatchPhase, type QuickMessageId, type ServerEventType, type ServerMessage } from "@football-link/shared";
+import { applyMatchModeRules, createMatchData, loadLiveEventScope, type EventScope, type MatchData } from "./data";
 import { createMatchTicket, verifyMatchTicket, verifySupabaseAccessToken, type MatchTicketMode } from "./auth";
 
 interface Env { MATCH_ROOM: DurableObjectNamespace<MatchRoom>; MATCH_QUEUE: DurableObjectNamespace<MatchQueue>; SUPABASE_URL: string; SUPABASE_SERVICE_ROLE_KEY: string; MATCH_TOKEN_SECRET: string }
 type Pause = { phase: MatchPhase; remainingMs: number; disconnectedPlayer: string; deadline: number };
-type StoredRoom = { matchId: string; engine: SerializedEngineState; pause: Pause | null; dataVersionId: string; persistedRounds?: number; rematch?: { requester: string; matchId: string } | null };
+type StoredRoom = { matchId: string; engine: SerializedEngineState; pause: Pause | null; dataVersionId: string; persistedRounds?: number; rematch?: { requester: string; matchId: string } | null; leagueFilter?: string | null; event?: EventScope | null };
 const BOT_PLAYER_ID = "test-bot";
 const quickMessageIds = new Set<QuickMessageId>(["GOOD_LUCK", "NICE_ONE", "SO_CLOSE", "READY", "REMATCH"]);
+const freeEmoteIds = new Set<string>(FREE_EMOTE_IDS);
+const allEmoteIds = new Set<string>(ALL_EMOTE_IDS);
 const chatStyleIds = new Set(["chat-classic", "chat-floodlight", "chat-derby", "chat-neon"]);
 const EMOTE_COOLDOWN_MS = 1_500;
 
 type RegionClass = "TR" | "EU" | "OTHER";
-type QueueKind = "quick" | "blitz";
+type QueueKind = "quick" | "blitz" | "event";
 type QueueEntry = { playerId: string; enqueuedAt: number; trophies: number; region: RegionClass };
 const QUEUE_TTL_MS = 120_000;
 const ABANDON_COOLDOWN_MS = 45_000;
 const cupBand = (waitMs: number) => waitMs < 15_000 ? 50 : waitMs < 45_000 ? 100 : Number.POSITIVE_INFINITY;
 const withinBand = (a: number, b: number, band: number) => Math.abs(a - b) <= band;
 const normalizeRegion = (value: unknown): RegionClass => value === "TR" || value === "EU" ? value : "OTHER";
-const normalizeQueueKind = (value: unknown): QueueKind => value === "blitz" ? "blitz" : "quick";
+const normalizeQueueKind = (value: unknown): QueueKind => value === "blitz" ? "blitz" : value === "event" ? "event" : "quick";
+const queueStorageKeys = (kind: QueueKind) => {
+  if (kind === "blitz") return { queueKey: "queue_blitz", assignKey: "assignments_blitz", coolKey: "cooldowns_blitz" };
+  if (kind === "event") return { queueKey: "queue_event", assignKey: "assignments_event", coolKey: "cooldowns_event" };
+  return { queueKey: "queue", assignKey: "assignments", coolKey: "cooldowns" };
+};
 
 export class MatchQueue extends DurableObject<Env> {
   async fetch(request: Request): Promise<Response> {
@@ -30,9 +37,7 @@ export class MatchQueue extends DurableObject<Env> {
     if (!playerId) return Response.json({ error: "INVALID_PLAYER" }, { status: 400 });
     const kind = normalizeQueueKind(body.queue);
     const now = Date.now();
-    const queueKey = kind === "blitz" ? "queue_blitz" : "queue";
-    const assignKey = kind === "blitz" ? "assignments_blitz" : "assignments";
-    const coolKey = kind === "blitz" ? "cooldowns_blitz" : "cooldowns";
+    const { queueKey, assignKey, coolKey } = queueStorageKeys(kind);
     const queue = ((await this.ctx.storage.get<QueueEntry[]>(queueKey)) ?? []).filter(entry => now - entry.enqueuedAt < QUEUE_TTL_MS);
     const assignments = (await this.ctx.storage.get<Record<string, string>>(assignKey)) ?? {};
     const cooldowns = ((await this.ctx.storage.get<Record<string, number>>(coolKey)) ?? {});
@@ -58,7 +63,7 @@ export class MatchQueue extends DurableObject<Env> {
 
     const trophies = Number.isFinite(body.trophies) ? Math.max(0, Math.floor(Number(body.trophies))) : 0;
     const region = normalizeRegion(body.region);
-    const selfBand = cupBand(0);
+    const selfBand = kind === "event" ? Number.POSITIVE_INFINITY : cupBand(0);
 
     let bestIndex = -1;
     let bestScore = Number.POSITIVE_INFINITY;
@@ -66,16 +71,19 @@ export class MatchQueue extends DurableObject<Env> {
       const candidate = queue[i]!;
       if (candidate.playerId === playerId) continue;
       const waitMs = Math.max(now - candidate.enqueuedAt, 0);
-      const band = cupBand(waitMs);
-      if (!withinBand(trophies, candidate.trophies, band)) continue;
+      // Event queue: fun mode — ignore cup bands, soft region prefer only
+      if (kind !== "event") {
+        const band = cupBand(waitMs);
+        if (!withinBand(trophies, candidate.trophies, band)) continue;
+      }
       const regionPenalty = candidate.region === region ? 0 : 1_000_000;
-      const cupGap = Math.abs(trophies - candidate.trophies);
+      const cupGap = kind === "event" ? 0 : Math.abs(trophies - candidate.trophies);
       const ageBonus = now - candidate.enqueuedAt;
       const score = regionPenalty + cupGap * 10 - ageBonus;
       if (score < bestScore) { bestScore = score; bestIndex = i; }
     }
 
-    if (bestIndex < 0) {
+    if (bestIndex < 0 && kind !== "event") {
       for (let i = 0; i < queue.length; i++) {
         const candidate = queue[i]!;
         if (candidate.playerId === playerId) continue;
@@ -113,6 +121,7 @@ export class MatchRoom extends DurableObject<Env> {
   private rematch: { requester: string; matchId: string } | null = null;
   private chatStyles = new Map<string, string>();
   private lastEmoteAt = new Map<string, number>();
+  private eventScope: EventScope | null = null;
 
   async fetch(request: Request): Promise<Response> {
     await this.ensureLoaded();
@@ -128,23 +137,42 @@ export class MatchRoom extends DurableObject<Env> {
     const wantsBot = ticket.mode === "bot";
     const quickMatch = ticket.mode === "quick";
     const blitzMatch = ticket.mode === "blitz";
+    const eventMatch = ticket.mode === "event";
     const current = [...this.sockets].find(([, id]) => id === player);
     if (current) { current[0].close(1000, "replaced"); this.sockets.delete(current[0]); }
     const pair = new WebSocketPair(); this.ctx.acceptWebSocket(pair[1]); pair[1].serializeAttachment({ player }); this.sockets.set(pair[1], player);
     const players = [...new Set(this.sockets.values())];
     if (!this.engine && (players.length === 2 || (players.length === 1 && wantsBot))) {
-      this.data = await createMatchData(this.env);
+      let event: EventScope | null = null;
+      if (eventMatch) {
+        event = await loadLiveEventScope(this.env);
+        if (!event) {
+          this.sockets.delete(pair[1]);
+          pair[1].close(1008, "EVENT_NOT_LIVE");
+          return new Response("event not live", { status: 409 });
+        }
+        this.eventScope = event;
+      }
+      this.data = await createMatchData(this.env, {
+        leagueFilter: event?.league ?? null,
+        event,
+      });
       if (blitzMatch) this.data.rules = applyMatchModeRules(this.data.rules, "blitz");
       const opponent = wantsBot ? BOT_PLAYER_ID : players[1]!;
       this.engine = new MatchEngine([players[0]!, opponent], this.data.rules);
       if (wantsBot) this.engine.ready(BOT_PLAYER_ID);
-      else await this.data.persistStart(this.matchId, this.engine.state.players, blitzMatch ? "BLITZ" : quickMatch ? "QUICK" : "FRIEND");
+      else await this.data.persistStart(
+        this.matchId,
+        this.engine.state.players,
+        eventMatch ? "EVENT" : blitzMatch ? "BLITZ" : quickMatch ? "QUICK" : "FRIEND",
+      );
       this.engine.state.deadline = Date.now() + (blitzMatch ? 8_000 : 10_000);
       const cards = wantsBot ? [] : await this.loadPlayerCards(this.engine.state.players);
       this.broadcast("READY_CHECK_STARTED", {
         deadline: this.engine.state.deadline,
         player_cards: cards,
-        match_mode: blitzMatch ? "BLITZ" : quickMatch ? "QUICK" : wantsBot ? "BOT" : "FRIEND",
+        match_mode: eventMatch ? "EVENT" : blitzMatch ? "BLITZ" : quickMatch ? "QUICK" : wantsBot ? "BOT" : "FRIEND",
+        event: event ? { id: event.id, league: event.league, title_tr: event.title_tr, title_en: event.title_en, accent: event.accent } : null,
         rules: {
           winning_score: this.data.rules.winningScore,
           maximum_rounds: this.data.rules.maximumRounds,
@@ -211,13 +239,26 @@ export class MatchRoom extends DurableObject<Env> {
       case "EMOTE_SEND": {
         if (engine.state.phase === "FINISHED" || engine.state.phase === "PAUSED") throw new Error("INVALID_PHASE");
         const now = Date.now(); if (now - (this.lastEmoteAt.get(player) ?? 0) < EMOTE_COOLDOWN_MS) throw new Error("EMOTE_COOLDOWN"); this.lastEmoteAt.set(player, now);
-        const messageId = String(cmd.payload.message_id) as QuickMessageId;
-        if (!quickMessageIds.has(messageId)) throw new Error("INVALID_QUICK_MESSAGE");
+        const kind = String(cmd.payload.kind ?? "TEXT");
         const requestedStyle = String(cmd.payload.chat_style_id ?? "");
         let chatStyleId = chatStyleIds.has(requestedStyle) ? requestedStyle : this.chatStyles.get(player);
         if (!chatStyleId) { try { chatStyleId = await data.getPlayerChatStyle(player); } catch { chatStyleId = "chat-classic"; } }
         this.chatStyles.set(player, chatStyleId);
-        this.broadcast("QUICK_MESSAGE", { player_id: player, message_id: messageId, chat_style_id: chatStyleId });
+
+        if (kind === "EMOJI") {
+          const emoteId = String(cmd.payload.emote_id ?? "") as EmoteId;
+          if (!allEmoteIds.has(emoteId)) throw new Error("INVALID_EMOTE");
+          if (!freeEmoteIds.has(emoteId)) {
+            const owned = await data.playerOwnsEmote(player, emoteId);
+            if (!owned) throw new Error("EMOTE_NOT_OWNED");
+          }
+          this.broadcast("QUICK_MESSAGE", { player_id: player, kind: "EMOJI", emote_id: emoteId, chat_style_id: chatStyleId });
+          break;
+        }
+
+        const messageId = String(cmd.payload.message_id) as QuickMessageId;
+        if (!quickMessageIds.has(messageId)) throw new Error("INVALID_QUICK_MESSAGE");
+        this.broadcast("QUICK_MESSAGE", { player_id: player, kind: "TEXT", message_id: messageId, chat_style_id: chatStyleId });
         break;
       }
       case "RECONNECT": {
@@ -371,8 +412,43 @@ export class MatchRoom extends DurableObject<Env> {
 
   private async resume(_player: string): Promise<void> { const pause = this.pause!; this.pause = null; this.engine!.state.phase = pause.phase; this.engine!.state.deadline = Date.now() + pause.remainingMs; for (const player of this.engine!.state.players) this.sendTo(player, "PLAYER_RECONNECTED", this.engine!.snapshotFor(player)); if (pause.remainingMs > 0) await this.ctx.storage.setAlarm(this.engine!.state.deadline); else await this.alarm(); }
   private async finishForfeit(leaver: string): Promise<void> { const winner = this.engine!.state.players.find(p => p !== leaver)!; this.pause = null; this.engine!.state.winnerId = winner; this.engine!.state.phase = "FINISHED"; this.engine!.state.deadline = null; if (!this.hasBot()) await this.data!.persistFinish(this.matchId, winner, this.engine!.state.scores); this.broadcast("MATCH_FINISHED", { winner_id: winner, forfeit: true }); }
-  private async ensureLoaded(): Promise<void> { if (this.engine && this.data) return; const stored=await this.ctx.storage.get<StoredRoom>("room"); if(stored){this.matchId=stored.matchId;this.engine=MatchEngine.restore(stored.engine);this.pause=stored.pause;this.persistedRounds=stored.persistedRounds??0;this.rematch=stored.rematch??null;} if(!this.data&&this.env.SUPABASE_URL&&this.env.SUPABASE_SERVICE_ROLE_KEY)this.data=await createMatchData(this.env,stored?.dataVersionId); for(const ws of this.ctx.getWebSockets()){const attachment=ws.deserializeAttachment() as {player?:string}|null;if(attachment?.player)this.sockets.set(ws,attachment.player);} }
-  private async persist():Promise<void>{if(!this.engine||!this.data)return;await this.ctx.storage.put("room",{matchId:this.matchId,engine:this.engine.serialize(),pause:this.pause,dataVersionId:this.data.versionId,persistedRounds:this.persistedRounds,rematch:this.rematch} satisfies StoredRoom);}
+  private async ensureLoaded(): Promise<void> {
+    if (this.engine && this.data) return;
+    const stored = await this.ctx.storage.get<StoredRoom>("room");
+    if (stored) {
+      this.matchId = stored.matchId;
+      this.engine = MatchEngine.restore(stored.engine);
+      this.pause = stored.pause;
+      this.persistedRounds = stored.persistedRounds ?? 0;
+      this.rematch = stored.rematch ?? null;
+      this.eventScope = stored.event ?? null;
+    }
+    if (!this.data && this.env.SUPABASE_URL && this.env.SUPABASE_SERVICE_ROLE_KEY) {
+      const restoreOpts: { requestedVersion?: string; leagueFilter?: string | null; event?: EventScope | null } = {
+        leagueFilter: stored?.leagueFilter ?? stored?.event?.league ?? null,
+        event: stored?.event ?? null,
+      };
+      if (stored?.dataVersionId) restoreOpts.requestedVersion = stored.dataVersionId;
+      this.data = await createMatchData(this.env, restoreOpts);
+    }
+    for (const ws of this.ctx.getWebSockets()) {
+      const attachment = ws.deserializeAttachment() as { player?: string } | null;
+      if (attachment?.player) this.sockets.set(ws, attachment.player);
+    }
+  }
+  private async persist(): Promise<void> {
+    if (!this.engine || !this.data) return;
+    await this.ctx.storage.put("room", {
+      matchId: this.matchId,
+      engine: this.engine.serialize(),
+      pause: this.pause,
+      dataVersionId: this.data.versionId,
+      persistedRounds: this.persistedRounds,
+      rematch: this.rematch,
+      leagueFilter: this.data.leagueFilter,
+      event: this.eventScope ?? this.data.event,
+    } satisfies StoredRoom);
+  }
   private async loadPlayerCards(playerIds: string[]): Promise<Record<string, unknown>[]> {
     try {
       if (!this.env.SUPABASE_URL || !this.env.SUPABASE_SERVICE_ROLE_KEY) return [];
@@ -407,21 +483,26 @@ export default { async fetch(request: Request, env: Env): Promise<Response> {
       const body = await request.json<{ match_id?: string; mode?: string }>();
       const matchId = body.match_id?.trim();
       if (!matchId || matchId.length > 100) return Response.json({ error: "INVALID_MATCH_ID" }, { status: 400, headers: corsHeaders });
-      const mode: MatchTicketMode | undefined = body.mode === "bot" || body.mode === "quick" || body.mode === "blitz" ? body.mode : undefined;
+      const mode: MatchTicketMode | undefined =
+        body.mode === "bot" || body.mode === "quick" || body.mode === "blitz" || body.mode === "event" ? body.mode : undefined;
       const token = await createMatchTicket({ playerId, matchId, mode }, env.MATCH_TOKEN_SECRET);
       return Response.json({ token, expires_in: 60 }, { headers: corsHeaders });
     } catch { return Response.json({ error: "UNAUTHORIZED" }, { status: 401, headers: corsHeaders }); }
   }
-  if ((url.pathname === "/quick-match" || url.pathname === "/blitz-match") && request.method === "POST") {
+  if ((url.pathname === "/quick-match" || url.pathname === "/blitz-match" || url.pathname === "/event-match") && request.method === "POST") {
     try {
       const bearer = request.headers.get("Authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
       if (!bearer) return Response.json({ error: "UNAUTHORIZED" }, { status: 401, headers: corsHeaders });
       const playerId = await verifySupabaseAccessToken(bearer, env);
       const body = await request.json<{ action?: "join" | "cancel"; region?: string }>();
-      const queueKind = url.pathname === "/blitz-match" ? "blitz" : "quick";
-      // trophies from DB (not client) — quick uses trophies, blitz uses blitz_trophies
+      const queueKind: QueueKind = url.pathname === "/blitz-match" ? "blitz" : url.pathname === "/event-match" ? "event" : "quick";
+      if (queueKind === "event" && body.action !== "cancel") {
+        const live = await loadLiveEventScope(env);
+        if (!live) return Response.json({ status: "NO_EVENT", mode: "event" }, { headers: corsHeaders });
+      }
+      // trophies from DB (not client) — quick uses trophies, blitz uses blitz_trophies; event ignores cups
       let trophies = 0;
-      if (body.action !== "cancel" && env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY) {
+      if (body.action !== "cancel" && queueKind !== "event" && env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY) {
         try {
           const select = queueKind === "blitz" ? "blitz_trophies" : "trophies";
           const profileResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/profiles?id=eq.${playerId}&select=${select}`, {

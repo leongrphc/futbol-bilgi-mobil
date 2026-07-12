@@ -1,18 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { router, useFocusEffect } from "expo-router";
+import { useFocusEffect } from "expo-router";
 import { Animated, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "@/auth/auth-context";
 import { supabase } from "@/auth/supabase";
 import { colors } from "@/theme/colors";
 import { tr } from "@/i18n";
-import { BottomNav } from "@/navigation/bottom-nav";
 
 type LadderTab = "ranked" | "blitz";
 type Row = { rank: number; display_name: string; player_code: string; trophies: number; tier?: string; is_me?: boolean; wins?: number; losses?: number };
 type BlitzRow = { rank: number; display_name: string; player_code: string; blitz_trophies: number; is_me?: boolean };
 type History = { match_id: string; mode: string; opponent_name: string; score_for: number; score_against: number; outcome: "WIN" | "LOSS"; finished_at: string };
-type Mastery = { club_external_id: string; club_name: string; correct_count: number; attempt_count: number; hit_rate: number };
 
 export default function Competition() {
   const { profile, refreshProfile } = useAuth();
@@ -20,21 +18,18 @@ export default function Competition() {
   const [table, setTable] = useState<Row[]>([]);
   const [blitzTable, setBlitzTable] = useState<BlitzRow[]>([]);
   const [history, setHistory] = useState<History[]>([]);
-  const [mastery, setMastery] = useState<Mastery[]>([]);
   const pulse = useRef(new Animated.Value(.86)).current;
 
   const load = useCallback(async () => {
     await refreshProfile();
-    const [standings, blitz, matches, clubs] = await Promise.all([
+    const [standings, blitz, matches] = await Promise.all([
       supabase.rpc("competition_nearby"),
       supabase.rpc("competition_blitz_nearby"),
       supabase.rpc("competition_my_history"),
-      supabase.rpc("mastery_mine", { p_limit: 8 }),
     ]);
     if (!standings.error) setTable((standings.data ?? []) as Row[]);
     if (!blitz.error) setBlitzTable((blitz.data ?? []) as BlitzRow[]);
     if (!matches.error) setHistory(((matches.data ?? []) as History[]).slice(0, 10));
-    if (!clubs.error) setMastery((clubs.data ?? []) as Mastery[]);
   }, [refreshProfile]);
 
   useFocusEffect(useCallback(() => { void load(); }, [load]));
@@ -46,6 +41,7 @@ export default function Competition() {
   const modeLabel = (mode: string) => {
     if (mode === "QUICK") return tr.quick.rankedTag;
     if (mode === "BLITZ") return tr.blitz.badge;
+    if (mode === "EVENT") return tr.event.badge;
     return tr.ranked.unranked;
   };
 
@@ -55,7 +51,6 @@ export default function Competition() {
   return (
     <SafeAreaView style={styles.safe}>
       <ScrollView contentContainerStyle={styles.page}>
-        <Pressable accessibilityRole="button" onPress={() => router.replace("/lobby")} hitSlop={12}><Text style={styles.back}>←</Text></Pressable>
         <Text style={styles.kicker}>{tr.competition.kicker}</Text>
         <Text style={styles.title}>{tr.competition.title}</Text>
 
@@ -114,17 +109,6 @@ export default function Competition() {
           </>
         )}
 
-        <Section title={tr.competition.mastery}>
-          {mastery.length ? mastery.map(item => (
-            <View key={item.club_external_id} style={styles.masteryRow}>
-              <View style={styles.person}>
-                <Text style={styles.name}>{item.club_name}</Text>
-                <Text style={styles.record}>{tr.competition.masteryHit(Number(item.hit_rate ?? 0))} · {item.correct_count}/{item.attempt_count}</Text>
-              </View>
-            </View>
-          )) : <Text style={styles.empty}>{tr.competition.masteryEmpty}</Text>}
-        </Section>
-
         <Section title={tr.competition.history}>
           {history.length ? history.map(item => (
             <View key={item.match_id} style={styles.history}>
@@ -140,7 +124,6 @@ export default function Competition() {
           )) : <Text style={styles.empty}>{tr.competition.noHistory}</Text>}
         </Section>
       </ScrollView>
-      <BottomNav />
     </SafeAreaView>
   );
 }
@@ -152,7 +135,6 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   page: { padding: 22, gap: 18, paddingBottom: 110 },
-  back: { color: colors.text, fontSize: 30 },
   kicker: { color: colors.primary, fontSize: 11, fontWeight: "900", letterSpacing: 1.7 },
   title: { color: colors.text, fontSize: 35, lineHeight: 39, fontWeight: "900", letterSpacing: -1.1 },
   tabs: { flexDirection: "row", backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 4, gap: 4 },
@@ -174,7 +156,6 @@ const styles = StyleSheet.create({
   sectionTitle: { color: colors.muted, fontWeight: "900", fontSize: 10, letterSpacing: 1.3 },
   rankRow: { flexDirection: "row", alignItems: "center", gap: 12, padding: 12, borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   blitzRow: { borderColor: "#3A2A66" },
-  masteryRow: { padding: 12, borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   me: { borderColor: colors.accent },
   blitzMe: { borderColor: "#B896FF" },
   rank: { color: colors.accent, width: 20, fontWeight: "900", textAlign: "center" },

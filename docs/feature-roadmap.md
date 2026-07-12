@@ -51,6 +51,27 @@ Trophy lookup server-side from `profiles`; client cannot spoof cups.
 | G1 | Blitz mode | ✅ ayrı kuyruk + `blitz_trophies` (+15/−5), 8s / first-to-2 |
 | — | Ranked clarity | ✅ Lobby DERECELİ / BLITZ / DERECESİZ; Lig blitz merdiveni; finish kupa delta |
 
+## Phase 6 — Match reacts (kodlandı)
+
+| ID | Özellik | Durum |
+|---|---|---|
+| D1 | Free 4 match emoji + toggle tray | ✅ maç UI `MatchReactBar` |
+| D1+ | Premium emojiler mağaza | ✅ `EMOTE` kind + `cosmetics_purchase` soft unlock |
+| — | Server ownership check | ✅ free allowlist + `player_owns_emote` |
+
+Kurallar: serbest metin chat yok; canned text + emoji only; 1.5s cooldown; premium ownership server-side.
+
+## Phase 7 — Event Week (kodlandı)
+
+| ID | Özellik | Durum |
+|---|---|---|
+| E1 | Admin draft / go-live / end | ✅ control room + RPCs |
+| E2 | Tek lig filtresi (tüm kulüpler o ligden) | ✅ bootstrap + pick_pair `league_filter` |
+| E3 | Ayrı event kuyruk, kupa yok | ✅ `/event-match` + mode `EVENT` |
+| E4 | Lobby empty / live kart | ✅ `event_current()` |
+
+Kurallar: classic/blitz kupa dokunulmaz; aynı anda tek LIVE; süre admin start/end.
+
 ## Asla (MVP / adalet)
 
 - Serbest sohbet, spectator, pay-for-answer, reveal-all-names IAP, ranked bot, ping compensation

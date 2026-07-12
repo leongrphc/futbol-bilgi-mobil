@@ -8,6 +8,7 @@ export type QuestRow = {
   completed: boolean;
   claimed: boolean;
   quest_day: string;
+  reward_coins: number;
 };
 
 export async function loadQuests(): Promise<{ quests: QuestRow[]; error?: string }> {
@@ -16,8 +17,8 @@ export async function loadQuests(): Promise<{ quests: QuestRow[]; error?: string
   return { quests: (data ?? []) as QuestRow[] };
 }
 
-export async function claimQuest(questId: string): Promise<{ ok: boolean; error?: string }> {
-  const { error } = await supabase.rpc("quests_claim", { p_quest_id: questId });
+export async function claimQuest(questId: string): Promise<{ ok: boolean; balance?: number; error?: string }> {
+  const { data, error } = await supabase.rpc("quests_claim", { p_quest_id: questId });
   if (error) return { ok: false, error: error.message };
-  return { ok: true };
+  return { ok: true, balance: typeof data === "number" ? data : undefined };
 }

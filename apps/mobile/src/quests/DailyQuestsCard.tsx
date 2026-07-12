@@ -4,6 +4,7 @@ import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from "rea
 import { colors } from "@/theme/colors";
 import { tr } from "@/i18n";
 import { claimQuest, loadQuests, type QuestRow } from "@/quests/api";
+import { useAuth } from "@/auth/auth-context";
 
 const titleFor = (id: string) => {
   const items = tr.quests.items as Record<string, string>;
@@ -11,6 +12,7 @@ const titleFor = (id: string) => {
 };
 
 export function DailyQuestsCard() {
+  const { refreshProfile } = useAuth();
   const [quests, setQuests] = useState<QuestRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
@@ -32,6 +34,7 @@ export function DailyQuestsCard() {
     const result = await claimQuest(quest.quest_id);
     setBusyId(undefined);
     if (!result.ok) Alert.alert(tr.quests.claimFailed);
+    else await refreshProfile();
     await refresh();
   };
 
@@ -49,7 +52,7 @@ export function DailyQuestsCard() {
           <View key={quest.quest_id} style={styles.row}>
             <View style={styles.meta}>
               <Text style={styles.questTitle}>{titleFor(quest.quest_id)}</Text>
-              <Text style={styles.progress}>{tr.quests.progress(quest.progress, quest.target_count)}</Text>
+              <View style={styles.questMeta}><Text style={styles.progress}>{tr.quests.progress(quest.progress, quest.target_count)}</Text><Text style={styles.reward}>+{quest.reward_coins ?? 0} C</Text></View>
             </View>
             {claimed ? (
               <View style={[styles.chip, styles.chipClaimed]}><Text style={styles.chipText}>{tr.quests.claimed}</Text></View>
@@ -75,8 +78,10 @@ const styles = StyleSheet.create({
   error: { color: colors.danger, fontWeight: "700" },
   row: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: colors.background, borderRadius: 12, padding: 12 },
   meta: { flex: 1, gap: 3 },
+  questMeta: { flexDirection: "row", alignItems: "center", gap: 8 },
   questTitle: { color: colors.text, fontWeight: "800", fontSize: 13 },
   progress: { color: colors.muted, fontSize: 11, fontWeight: "700" },
+  reward: { color: "#F4C95D", fontSize: 10, fontWeight: "900" },
   chip: { minWidth: 72, borderRadius: 999, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 10, paddingVertical: 7, alignItems: "center" },
   chipClaim: { backgroundColor: colors.primary, borderColor: colors.primary },
   chipClaimed: { borderColor: colors.primary },

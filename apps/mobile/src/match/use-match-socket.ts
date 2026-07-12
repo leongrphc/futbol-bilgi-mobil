@@ -6,7 +6,7 @@ function httpUrl(webSocketUrl: string) {
   return webSocketUrl.replace(/^wss:/, "https:").replace(/^ws:/, "http:");
 }
 
-export function useMatchSocket(matchId: string, playerId: string, mode?: "bot" | "quick" | "blitz", resume = false) {
+export function useMatchSocket(matchId: string, playerId: string, mode?: "bot" | "quick" | "blitz" | "event", resume = false) {
   const [events, setEvents] = useState<ServerMessage[]>([]);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string>();

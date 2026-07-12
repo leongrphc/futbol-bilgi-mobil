@@ -67,7 +67,7 @@ Bu dosya gerçekleşen uygulamayı izler. Ürün gereksinimlerinin kesin kaynağ
 - Football Data Builder v3; 131 kulüp config'i, güncel kadro/transfer senkronizasyonu, freshness raporu ve server-only schema v2 export'u içerir. Mevcut paketlenmiş export 161 gerçek oyuncu ve 245 oynanabilir takım çifti içerir; 5.000 gerçek oyuncu production veri hedefi henüz tamamlanmadı.
 - Schema v2 migration ve v3 export canlı Supabase'e MCP ile yayınlandı: 161 oyuncu, 170 kabul edilen alias, 472 kulüp üyeliği ve 245 pair. Lobi ile alt navigasyonun ilk mağaza-kalitesi görsel geçişi Android export ile doğrulandı.
 - Kuşanılan pitch theme artık maç atmosferini, skor panelini, saha çizgilerini ve skor ışıklarını değiştiriyor; badge oyuncunun skor kimliğinde renkli arma olarak render ediliyor. Mağaza kartları gerçek pitch/badge önizlemeleri gösteriyor.
-- `leongrphc@gmail.com` canlı admin hesabı olarak yetkilendirildi. Admin oyun ayarları server-only tabloda tutuluyor ve production Worker takım havuzu, süreler, reconnect, kazanma puanı, maksimum round ve ani ölüm kurallarını maç başında buradan okuyor.
+- Canlı admin hesabı: `leongrphc@gmail.com` (`app_metadata.role=admin`). Admin oyun ayarları server-only tabloda tutuluyor ve production Worker takım havuzu, süreler, reconnect, kazanma puanı, maksimum round ve ani ölüm kurallarını maç başında buradan okuyor.
 - Production hesapları `#5C6A0B` ve `#7A51C3` arasında arkadaş isteği, kabul ve iki yönlü listeleme canlı doğrulandı. Arkadaş/lig/kozmetik sekmeleri her odaklanmada yenileniyor; sosyal ve kozmetik RPC hataları artık sessizce yutulmuyor.
 
 ## Motion durumu

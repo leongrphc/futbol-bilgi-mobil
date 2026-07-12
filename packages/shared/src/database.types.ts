@@ -447,6 +447,8 @@ export type Database = {
         Row: {
           avatar_url: string | null
           blitz_trophies: number
+          coins: number
+          dollars: number
           created_at: string
           display_name: string
           id: string
@@ -456,6 +458,8 @@ export type Database = {
         Insert: {
           avatar_url?: string | null
           blitz_trophies?: number
+          coins?: number
+          dollars?: number
           created_at?: string
           display_name?: string
           id: string
@@ -465,6 +469,8 @@ export type Database = {
         Update: {
           avatar_url?: string | null
           blitz_trophies?: number
+          coins?: number
+          dollars?: number
           created_at?: string
           display_name?: string
           id?: string
@@ -718,8 +724,61 @@ export type Database = {
         Returns: Json
       }
       cosmetics_equip: { Args: { p_item_id: string }; Returns: undefined }
-      cosmetics_mine: { Args: Record<PropertyKey, never>; Returns: { accent: string; equipped: boolean; item_id: string; kind: string; name: string }[] }
-      quests_claim: { Args: { p_quest_id: string }; Returns: boolean }
+      cosmetics_purchase: { Args: { p_item_id: string }; Returns: number }
+      cosmetics_mine: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          accent: string
+          equipped: boolean
+          glyph: string | null
+          is_premium: boolean
+          item_id: string
+          kind: string
+          name: string
+          owned: boolean
+          price_coins: number
+          price_dollars: number
+        }[]
+      }
+      emotes_mine: {
+        Args: Record<PropertyKey, never>
+        Returns: { glyph: string; is_premium: boolean; item_id: string; name: string }[]
+      }
+      player_owns_emote: { Args: { p_emote_id: string; p_player_id: string }; Returns: boolean }
+      event_current: { Args: Record<PropertyKey, never>; Returns: Json }
+      event_leagues: {
+        Args: Record<PropertyKey, never>
+        Returns: { active_club_count: number; club_count: number; league: string }[]
+      }
+      event_live_scope: { Args: Record<PropertyKey, never>; Returns: Json }
+      admin_event_list: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          accent: string
+          club_count: number
+          ends_at: string | null
+          id: string
+          league: string
+          starts_at: string | null
+          status: string
+          title_en: string
+          title_tr: string
+          updated_at: string
+        }[]
+      }
+      admin_event_upsert: {
+        Args: {
+          p_accent?: string
+          p_id?: string
+          p_league?: string
+          p_title_en?: string
+          p_title_tr?: string
+        }
+        Returns: string
+      }
+      admin_event_go_live: { Args: { p_id: string }; Returns: string }
+      admin_event_end: { Args: { p_id: string }; Returns: string }
+      quests_claim: { Args: { p_quest_id: string }; Returns: number }
       quests_mine: {
         Args: Record<PropertyKey, never>
         Returns: {
@@ -729,6 +788,7 @@ export type Database = {
           progress: number
           quest_day: string
           quest_id: string
+          reward_coins: number
           target_count: number
         }[]
       }

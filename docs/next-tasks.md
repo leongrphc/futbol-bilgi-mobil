@@ -2,13 +2,15 @@
 
 Güncel durum matrisi: [implementation-status.md](implementation-status.md)
 
-## Phase 1–3 (kodlandı)
+## Phase 1–3 + emotes (kodlandı)
 
 1. Phase 1 album/quests prod migration uygulandı
 2. Phase 2 sudden-death/commentator/share client-only
 3. Phase 3 tutorial bot path; solo daily kaldırıldı (`20260713190000_drop_solo_daily.sql`)
+4. Match emotes: free 4 + premium shop + tray toggle (`20260713230000_match_emotes.sql` / prod `match_emotes`)
+5. Event Week: admin lig event, kupa yok, lobby empty/live, `/event-match` (prod `event_week_core` + `club_league_country_backfill`)
 
-Smoke: lobby tutorial kartı, bot/tutorial 3 şıklı cevap
+Smoke: lobby tutorial kartı, bot/tutorial 3 şıklı cevap, maç emoji tray, stil odası premium unlock, control room event draft→live→end, event maç only-league pool
 
 Detay: [feature-roadmap.md](feature-roadmap.md)
 

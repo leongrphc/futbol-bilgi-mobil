@@ -9,6 +9,8 @@ export interface Profile {
   avatarUrl: string | null;
   trophies: number;
   blitzTrophies: number;
+  coins: number;
+  dollars: number;
 }
 
 interface AuthState {
@@ -28,9 +30,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
   const loadProfile = async (activeSession: Session | null) => {
     if (!activeSession) { setProfile(null); return; }
-    const { data, error } = await supabase.from("profiles").select("id,display_name,player_code,avatar_url,trophies,blitz_trophies").eq("id", activeSession.user.id).single();
+    const { data, error } = await supabase.from("profiles").select("id,display_name,player_code,avatar_url,trophies,blitz_trophies,coins,dollars").eq("id", activeSession.user.id).single();
     if (error) { setProfile(null); return; }
-    setProfile({ id: data.id, displayName: data.display_name, playerCode: data.player_code, avatarUrl: data.avatar_url, trophies: data.trophies, blitzTrophies: data.blitz_trophies ?? 0 });
+    setProfile({ id: data.id, displayName: data.display_name, playerCode: data.player_code, avatarUrl: data.avatar_url, trophies: data.trophies, blitzTrophies: data.blitz_trophies ?? 0, coins: data.coins ?? 0, dollars: data.dollars ?? 0 });
   };
 
   useEffect(() => {
