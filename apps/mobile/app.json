@@ -12,7 +12,8 @@
       "typedRoutes": true
     },
     "android": {
-      "package": "com.footballlink.mvp"
+      "package": "com.footballlink.mvp",
+      "softwareKeyboardLayoutMode": "resize"
     },
     "ios": {
       "bundleIdentifier": "com.footballlink.mvp"

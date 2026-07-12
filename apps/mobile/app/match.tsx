@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { router, useLocalSearchParams } from "expo-router";
-import { AccessibilityInfo, Alert, Animated, KeyboardAvoidingView, Platform, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { AccessibilityInfo, Alert, Animated, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from "react-native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import type { Club, EmoteId, QuickMessageId, ServerMessage } from "@football-link/shared";
 import { EMOTE_GLYPHS } from "@football-link/shared";
@@ -407,10 +407,39 @@ export default function Match() {
   const rematchDeclined = events.filter(event => event.event_type === "REMATCH_DECLINED").at(-1)?.event_id;
   const handledDecline = useRef<string | undefined>(undefined);
   useEffect(() => { if (rematchDeclined && handledDecline.current !== rematchDeclined) { handledDecline.current = rematchDeclined; Alert.alert(tr.rematch.declined); } }, [rematchDeclined]);
+  const insets = useSafeAreaInsets();
+  const scrollRef = useRef<ScrollView>(null);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  useEffect(() => {
+    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const show = Keyboard.addListener(showEvent, event => {
+      setKeyboardHeight(event.endCoordinates.height);
+      // Keep focused answer field clear of the keyboard with >=10px gap.
+      requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
+    });
+    const hide = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+  const keyboardGap = 10;
+  const pagePadBottom = Math.max(40, keyboardHeight > 0 ? keyboardHeight + keyboardGap - insets.bottom : 40);
 
   return <SafeAreaView style={[styles.safe, { backgroundColor: pitchTheme.background }]}>
-    <KeyboardAvoidingView style={styles.keyboard} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-    <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
+    <KeyboardAvoidingView
+      style={styles.keyboard}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      keyboardVerticalOffset={Platform.OS === "ios" ? insets.top : 0}
+    >
+    <ScrollView
+      ref={scrollRef}
+      contentContainerStyle={[styles.page, { paddingBottom: pagePadBottom }]}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
+      automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
+    >
       <View pointerEvents="none" style={[styles.pitchAtmosphere, { borderColor: pitchTheme.line, backgroundColor: pitchTheme.haze }]}><View style={[styles.atmosphereCircle, { borderColor: pitchTheme.line }]} /><View style={[styles.atmosphereHalf, { backgroundColor: pitchTheme.line }]} /></View>
       <View style={styles.topbar}>
         <Pressable accessibilityRole="button" accessibilityLabel={tr.match.exit} onPress={exitMatch} hitSlop={12}><Text style={styles.close}>×</Text></Pressable>
@@ -706,7 +735,28 @@ function AnswerField({ value, onChangeText, editable, feedback, reducedMotion, o
     if (next.length - value.length > 2) return;
     onChangeText(next);
   };
-  return <Animated.View style={{ transform: [{ scale: pulse }] }}><TextInput accessibilityLabel={tr.match.answerA11y} autoFocus value={value} onChangeText={guardPaste} editable={editable} autoCorrect={false} autoComplete="off" textContentType="none" importantForAutofill="no" contextMenuHidden returnKeyType="send" blurOnSubmit={false} onSubmitEditing={onSubmit} placeholder={tr.match.answerPlaceholder} placeholderTextColor={colors.muted} style={[styles.answerInput, { borderColor }, feedback === "wrong" && styles.answerInputWrong, feedback === "correct" && styles.answerInputCorrect]} /></Animated.View>;
+  return (
+    <Animated.View style={[styles.answerFieldWrap, { transform: [{ scale: pulse }] }]}>
+      <TextInput
+        accessibilityLabel={tr.match.answerA11y}
+        autoFocus
+        value={value}
+        onChangeText={guardPaste}
+        editable={editable}
+        autoCorrect={false}
+        autoComplete="off"
+        textContentType="none"
+        importantForAutofill="no"
+        contextMenuHidden
+        returnKeyType="send"
+        blurOnSubmit={false}
+        onSubmitEditing={onSubmit}
+        placeholder={tr.match.answerPlaceholder}
+        placeholderTextColor={colors.muted}
+        style={[styles.answerInput, { borderColor }, feedback === "wrong" && styles.answerInputWrong, feedback === "correct" && styles.answerInputCorrect]}
+      />
+    </Animated.View>
+  );
 }
 function formatRevealReason(value?: Record<string, unknown>): string {
   const reason = String(value?.win_reason ?? "");
@@ -797,7 +847,7 @@ const styles = StyleSheet.create({
   lastSecond: { backgroundColor: "rgba(244,201,93,.16)", borderWidth: 1, borderColor: colors.accent, borderRadius: 10, padding: 10, alignItems: "center" }, lastSecondText: { color: colors.accent, fontSize: 10, fontWeight: "900", letterSpacing: 1.2 },
   wrongBanner: { backgroundColor: "rgba(232,93,93,.16)", borderWidth: 1, borderColor: colors.danger, borderRadius: 10, padding: 10, alignItems: "center" }, wrongBannerText: { color: colors.danger, fontSize: 10, fontWeight: "900", letterSpacing: 1.2 },
   correctBanner: { backgroundColor: "rgba(61,184,122,.14)", borderWidth: 1, borderColor: colors.primary, borderRadius: 10, padding: 10, alignItems: "center" }, correctBannerText: { color: colors.primary, fontSize: 10, fontWeight: "900", letterSpacing: 1.2 },
-  safe: { flex: 1, backgroundColor: colors.background }, keyboard: { flex: 1 }, page: { padding: 18, gap: 14, paddingBottom: 40, overflow: "hidden" }, pitchAtmosphere: { position: "absolute", width: 330, height: 330, borderRadius: 165, borderWidth: 1, right: -190, top: 190, opacity: .55, alignItems: "center", justifyContent: "center" }, atmosphereCircle: { width: 112, height: 112, borderRadius: 56, borderWidth: 1 }, atmosphereHalf: { position: "absolute", width: 1, height: 330 },
+  safe: { flex: 1, backgroundColor: colors.background }, keyboard: { flex: 1 }, page: { padding: 18, gap: 14, paddingBottom: 40, overflow: "hidden", flexGrow: 1 }, answerFieldWrap: { marginBottom: 10 }, pitchAtmosphere: { position: "absolute", width: 330, height: 330, borderRadius: 165, borderWidth: 1, right: -190, top: 190, opacity: .55, alignItems: "center", justifyContent: "center" }, atmosphereCircle: { width: 112, height: 112, borderRadius: 56, borderWidth: 1 }, atmosphereHalf: { position: "absolute", width: 1, height: 330 },
   topbar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, close: { color: colors.text, fontSize: 31, fontWeight: "300" }, connection: { flexDirection: "row", alignItems: "center", gap: 7 }, dot: { width: 7, height: 7, borderRadius: 4 }, connectionText: { color: colors.muted, fontSize: 10, fontWeight: "900", letterSpacing: 1.3 }, roundWrap: { flexDirection: "row", alignItems: "center", gap: 6 }, sdBadge: { color: colors.ink, backgroundColor: colors.signal, overflow: "hidden", borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, fontSize: 9, fontWeight: "900" }, round: { color: colors.accent, fontSize: 12, fontWeight: "900" },
   sdStrip: { backgroundColor: "rgba(255,107,61,.14)", borderWidth: 1, borderColor: colors.signal, borderRadius: 12, paddingHorizontal: 13, paddingVertical: 10, gap: 3 }, sdStripText: { color: colors.signal, fontSize: 11, fontWeight: "900", letterSpacing: 1.2 }, sdStripCopy: { color: colors.muted, fontSize: 12, fontWeight: "700" },
   sdOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(7,18,28,.88)", alignItems: "center", justifyContent: "center", zIndex: 40, padding: 24 }, sdCard: { width: "100%", maxWidth: 340, borderRadius: 22, borderWidth: 1, borderColor: colors.signal, backgroundColor: "#1A0F12", paddingVertical: 28, paddingHorizontal: 22, alignItems: "center", gap: 8 }, sdKicker: { color: colors.signal, fontSize: 10, fontWeight: "900", letterSpacing: 2 }, sdTitle: { color: colors.text, fontSize: 34, fontWeight: "900", letterSpacing: -0.8, textAlign: "center" }, sdCopy: { color: colors.muted, fontSize: 14, lineHeight: 20, textAlign: "center", maxWidth: 260 },

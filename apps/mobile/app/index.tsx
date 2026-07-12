@@ -1,9 +1,9 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
-import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { ActivityIndicator, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors } from "@/theme/colors";
 import { getActiveMatch, type ActiveMatch } from "@/match/active-match";
 import { supabase } from "@/auth/supabase";
@@ -82,11 +82,34 @@ export default function Login() {
     router.push({ pathname: "/match", params });
   };
 
+  const insets = useSafeAreaInsets();
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  useEffect(() => {
+    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const show = Keyboard.addListener(showEvent, event => setKeyboardHeight(event.endCoordinates.height));
+    const hide = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+  const formPadBottom = Math.max(12, keyboardHeight > 0 ? keyboardHeight + 10 - insets.bottom : 12);
+
   if (authLoading) return <SafeAreaView style={styles.loading}><ActivityIndicator color={colors.primary} size="large" /><Text style={styles.loadingText}>{tr.auth.checking}</Text></SafeAreaView>;
 
   return <SafeAreaView style={styles.safe}>
-    <KeyboardAvoidingView style={styles.keyboard} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-      <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
+    <KeyboardAvoidingView
+      style={styles.keyboard}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      keyboardVerticalOffset={Platform.OS === "ios" ? insets.top : 0}
+    >
+      <ScrollView
+        contentContainerStyle={[styles.page, { paddingBottom: formPadBottom }]}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
+      >
         <View style={styles.brand}>
           <Text style={styles.kicker}>{tr.auth.kicker}</Text>
           <Text style={styles.title}>{tr.auth.title}{"\n"}<Text style={styles.titleAccent}>{tr.auth.titleAccent}</Text></Text>
@@ -118,7 +141,7 @@ export default function Login() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background }, keyboard: { flex: 1 }, loading: { flex: 1, backgroundColor: colors.background, alignItems: "center", justifyContent: "center", gap: 14 }, loadingText: { color: colors.muted, fontWeight: "700" }, page: { flexGrow: 1, padding: 24, justifyContent: "space-between", gap: 28 },
   brand: { paddingTop: 24 }, kicker: { color: colors.primary, fontSize: 11, fontWeight: "900", letterSpacing: 1.7 }, title: { color: colors.text, fontSize: 45, lineHeight: 49, fontWeight: "900", letterSpacing: -1.8, marginTop: 16 }, titleAccent: { color: colors.accent }, pitchLine: { height: 1, backgroundColor: colors.pitchLine, marginVertical: 23, alignItems: "center", justifyContent: "center" }, centerSpot: { width: 11, height: 11, borderRadius: 6, borderWidth: 2, borderColor: colors.primary, backgroundColor: colors.background }, lead: { color: colors.muted, fontSize: 16, lineHeight: 23, maxWidth: 330 },
-  form: { gap: 10, paddingBottom: 10 }, tabs: { flexDirection: "row", padding: 4, borderRadius: 12, backgroundColor: colors.surface, marginBottom: 4 }, tab: { flex: 1, paddingVertical: 11, alignItems: "center", borderRadius: 9 }, tabActive: { backgroundColor: colors.surfaceElevated }, tabText: { color: colors.muted, fontWeight: "800" }, tabTextActive: { color: colors.text }, input: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, color: colors.text, paddingHorizontal: 16, paddingVertical: 14, borderRadius: 11, fontSize: 16 },
+  form: { gap: 10, paddingBottom: 10, marginBottom: 10 }, tabs: { flexDirection: "row", padding: 4, borderRadius: 12, backgroundColor: colors.surface, marginBottom: 4 }, tab: { flex: 1, paddingVertical: 11, alignItems: "center", borderRadius: 9 }, tabActive: { backgroundColor: colors.surfaceElevated }, tabText: { color: colors.muted, fontWeight: "800" }, tabTextActive: { color: colors.text }, input: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, color: colors.text, paddingHorizontal: 16, paddingVertical: 14, borderRadius: 11, fontSize: 16 },
   button: { marginTop: 3, backgroundColor: colors.primary, minHeight: 54, borderRadius: 11, paddingHorizontal: 17, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, buttonText: { color: colors.background, fontSize: 16, fontWeight: "900" }, arrow: { color: colors.background, fontSize: 23 }, error: { color: colors.danger, fontSize: 13, lineHeight: 18 }, notice: { color: colors.primary, fontSize: 13, lineHeight: 18 }, socialDivider: { flexDirection: "row", alignItems: "center", gap: 11, marginVertical: 5 }, rule: { height: 1, backgroundColor: colors.border, flex: 1 }, or: { color: colors.muted, fontSize: 9, fontWeight: "900", letterSpacing: 1.2 }, socialRow: { flexDirection: "row", gap: 10 }, socialButton: { flex: 1, minHeight: 49, borderRadius: 11, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 9 }, socialMark: { color: colors.accent, fontWeight: "900", fontSize: 15 }, socialText: { color: colors.text, fontWeight: "800" },
   signedIn: { gap: 12, paddingBottom: 12 }, profileCard: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 14, padding: 17, flexDirection: "row", justifyContent: "space-between", alignItems: "center" }, profileName: { color: colors.text, fontSize: 20, fontWeight: "900" }, profileCode: { color: colors.muted, marginTop: 5, fontWeight: "700", fontSize: 12 }, statusDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.primary }, resumeCard: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.accent, borderRadius: 14, padding: 16, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, resumeKicker: { color: colors.accent, fontSize: 9, fontWeight: "900", letterSpacing: 1.2 }, resumeTitle: { color: colors.text, fontSize: 17, fontWeight: "900", marginTop: 5 }, resumeArrow: { color: colors.accent, fontSize: 24 }, pressed: { opacity: 0.82, transform: [{ scale: 0.99 }] }, disabled: { opacity: 0.45 },
 });
