@@ -202,10 +202,18 @@ export default function Match() {
   const finishedHandled = useRef(false);
   const lastTickSecond = useRef<number | null>(null);
   const finishSfxPlayed = useRef(false);
+  const kickoffWhistlePlayed = useRef(false);
   useEffect(() => {
     void stopLobbyMusic();
     void preloadSounds();
   }, []);
+  useEffect(() => {
+    // First transition into club selection = match kickoff.
+    if (state.phase !== "SELECTING" || kickoffWhistlePlayed.current) return;
+    kickoffWhistlePlayed.current = true;
+    void playSfx("whistle");
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  }, [state.phase]);
   useEffect(() => { void saveActiveMatch(botMode ? { matchId, playerId, mode: "bot" } : { matchId, playerId }); }, [botMode, matchId, playerId]);
   useEffect(() => { if (botMode) return; void supabase.rpc("social_set_presence", { p_state: "IN_MATCH" }); return () => { void supabase.rpc("social_set_presence", { p_state: "ONLINE" }); }; }, [botMode]);
   useEffect(() => {
