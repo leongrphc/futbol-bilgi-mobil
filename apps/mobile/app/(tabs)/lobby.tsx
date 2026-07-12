@@ -141,6 +141,7 @@ export default function Lobby() {
         if (result.status === "MATCHED" && result.match_id) {
           setBusy(false);
           setQueueNote(undefined);
+          void playSfx("match_found");
           router.replace({ pathname: "/match", params: { playerId, matchId: result.match_id, mode: kind } });
           return;
         }

@@ -1,17 +1,31 @@
 import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from "expo-audio";
 import { getAudioPrefsSync, loadAudioPrefs, subscribeAudioPrefs } from "./preferences";
 
-export type SfxId = "correct" | "wrong" | "tick" | "sudden_death" | "finish" | "emote" | "tab" | "whistle";
+export type SfxId =
+  | "correct"
+  | "wrong"
+  | "tick"
+  | "sudden_death"
+  | "finish_win"
+  | "finish_loss"
+  | "emote"
+  | "tab"
+  | "whistle"
+  | "match_found"
+  | "lock";
 
 const sources: Record<SfxId, number> = {
   correct: require("../../assets/sfx/correct.wav"),
   wrong: require("../../assets/sfx/wrong.wav"),
   tick: require("../../assets/sfx/tick.wav"),
   sudden_death: require("../../assets/sfx/sudden_death.wav"),
-  finish: require("../../assets/sfx/finish.wav"),
+  finish_win: require("../../assets/sfx/finish_win.wav"),
+  finish_loss: require("../../assets/sfx/finish_loss.wav"),
   emote: require("../../assets/sfx/emote.wav"),
   tab: require("../../assets/sfx/tab.wav"),
   whistle: require("../../assets/sfx/whistle.wav"),
+  match_found: require("../../assets/sfx/match_found.wav"),
+  lock: require("../../assets/sfx/lock.wav"),
 };
 
 const lobbySource = require("../../assets/sfx/lobby_loop.wav");

@@ -298,8 +298,9 @@ export default function Match() {
     if (state.phase !== "FINISHED" || finishSfxPlayed.current) return;
     finishSfxPlayed.current = true;
     void stopSuddenDeathBed();
-    void playSfx("finish");
-  }, [state.phase]);
+    const winnerId = typeof state.result?.winner_id === "string" ? state.result.winner_id : null;
+    void playSfx(winnerId === playerId ? "finish_win" : "finish_loss");
+  }, [playerId, state.phase, state.result]);
   useEffect(() => {
     if (!state.quickMessage?.eventId) return;
     void playSfx("emote");
@@ -347,7 +348,13 @@ export default function Match() {
     setAnswer(value);
     submit(value);
   };
-  const confirmSelection = () => { if (!selected || state.locked) return; send("TEAM_SELECT", { club_id: selected }); send("TEAM_CONFIRM"); };
+  const confirmSelection = () => {
+    if (!selected || state.locked) return;
+    void playSfx("lock");
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    send("TEAM_SELECT", { club_id: selected });
+    send("TEAM_CONFIRM");
+  };
   const clubName = (id: string) => state.searchableClubs.find(club => club.id === id)?.name ?? state.pool.find(club => club.id === id)?.name ?? id;
   const clubInitials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]?.toLocaleUpperCase("tr-TR")).join("");
   const opponentId = botMode ? "test-bot" : state.playerCards.find(card => card.player_id !== playerId)?.player_id ?? Object.keys(state.scores).find(id => id !== playerId);
