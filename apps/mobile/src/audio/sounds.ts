@@ -51,7 +51,7 @@ function makePlayer(source: number, loop = false): AudioPlayer {
   // downloadFirst helps local require() assets resolve to a playable URI on device.
   const player = createAudioPlayer(source, { downloadFirst: true, updateInterval: 1000 });
   player.loop = loop;
-  player.volume = loop ? 0.35 : 1;
+  player.volume = loop ? 0.55 : 1;
   return player;
 }
 
