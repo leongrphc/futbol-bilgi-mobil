@@ -1,7 +1,7 @@
 import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from "expo-audio";
 import { getAudioPrefsSync, loadAudioPrefs, subscribeAudioPrefs } from "./preferences";
 
-export type SfxId = "correct" | "wrong" | "tick" | "sudden_death" | "finish" | "emote";
+export type SfxId = "correct" | "wrong" | "tick" | "sudden_death" | "finish" | "emote" | "tab";
 
 const sources: Record<SfxId, number> = {
   correct: require("../../assets/sfx/correct.wav"),
@@ -10,6 +10,7 @@ const sources: Record<SfxId, number> = {
   sudden_death: require("../../assets/sfx/sudden_death.wav"),
   finish: require("../../assets/sfx/finish.wav"),
   emote: require("../../assets/sfx/emote.wav"),
+  tab: require("../../assets/sfx/tab.wav"),
 };
 
 const lobbySource = require("../../assets/sfx/lobby_loop.wav");

@@ -7,6 +7,7 @@ import { BackHandler, Platform, Pressable, StyleSheet, Text, View } from "react-
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors } from "@/theme/colors";
 import { tr } from "@/i18n";
+import { playSfx } from "@/audio/sounds";
 
 type IconName = ComponentProps<typeof Ionicons>["name"];
 type MainRoute = "lobby" | "friends" | "competition" | "cosmetics";
@@ -45,6 +46,7 @@ export function StadiumTabBar({ state, navigation }: BottomTabBarProps) {
             const event = navigation.emit({ type: "tabPress", target: route.key, canPreventDefault: true });
             if (!focused && !event.defaultPrevented) {
               void Haptics.selectionAsync();
+              void playSfx("tab");
               navigation.navigate(route.name, route.params);
             }
           };
@@ -84,7 +86,12 @@ export function BottomNav() {
           const meta = routeMeta(name)!;
           const focused = pathname === meta.path;
           return (
-            <Pressable key={name} accessibilityRole="tab" accessibilityState={{ selected: focused }} onPress={() => { void Haptics.selectionAsync(); router.replace(meta.path as never); }} style={({ pressed }) => [styles.item, focused && styles.itemActive, pressed && styles.pressed]}>
+            <Pressable key={name} accessibilityRole="tab" accessibilityState={{ selected: focused }} onPress={() => {
+              if (focused) return;
+              void Haptics.selectionAsync();
+              void playSfx("tab");
+              router.replace(meta.path as never);
+            }} style={({ pressed }) => [styles.item, focused && styles.itemActive, pressed && styles.pressed]}>
               <TabVisual meta={meta} focused={focused} />
             </Pressable>
           );
