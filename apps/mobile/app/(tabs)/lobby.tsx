@@ -10,6 +10,8 @@ import { supabase } from "@/auth/supabase";
 import { DailyQuestsCard } from "@/quests/DailyQuestsCard";
 import { isTutorialComplete, markTutorialComplete, resetTutorial } from "@/onboarding/tutorial";
 import { CoinPill, DollarPill } from "@/economy/CoinPill";
+import { getAudioPrefsSync, loadAudioPrefs, setMusicEnabled, setSfxEnabled, subscribeAudioPrefs, type AudioPrefs } from "@/audio/preferences";
+import { preloadSounds, startLobbyMusic, stopLobbyMusic } from "@/audio/sounds";
 
 export default function Lobby() {
   const { room: invitedRoom } = useLocalSearchParams<{ room?: string }>();
@@ -23,6 +25,7 @@ export default function Lobby() {
   const [eventBusy, setEventBusy] = useState(false);
   const [queueNote, setQueueNote] = useState<string>();
   const [showTutorial, setShowTutorial] = useState(false);
+  const [audioPrefs, setAudioPrefs] = useState<AudioPrefs>(getAudioPrefsSync());
   const [eventCard, setEventCard] = useState<{
     status: "NONE" | "LIVE";
     id?: string;
@@ -36,8 +39,14 @@ export default function Lobby() {
   const eventTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const queueRegion = locale === "tr" ? "TR" : "EU";
   useEffect(() => { if (invitedRoom?.trim()) setRoom(invitedRoom.trim()); }, [invitedRoom]);
+  useEffect(() => {
+    void loadAudioPrefs().then(setAudioPrefs);
+    return subscribeAudioPrefs(setAudioPrefs);
+  }, []);
   useFocusEffect(useCallback(() => {
     let alive = true;
+    void preloadSounds();
+    void startLobbyMusic();
     void (async () => {
       const done = await isTutorialComplete();
       if (alive) setShowTutorial(!done);
@@ -69,10 +78,21 @@ export default function Lobby() {
         setEventCard({ status: "NONE" });
       }
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+      void stopLobbyMusic();
+    };
   }, []));
   const openAccountMenu = () => Alert.alert(profile?.displayName ?? tr.nav.account, profile ? `#${profile.playerCode}` : undefined, [
     { text: tr.report.cancel, style: "cancel" },
+    {
+      text: audioPrefs.sfxEnabled ? tr.audio.sfxOn : tr.audio.sfxOff,
+      onPress: () => { void setSfxEnabled(!audioPrefs.sfxEnabled).then(setAudioPrefs); },
+    },
+    {
+      text: audioPrefs.musicEnabled ? tr.audio.musicOn : tr.audio.musicOff,
+      onPress: () => { void setMusicEnabled(!audioPrefs.musicEnabled).then(setAudioPrefs); },
+    },
     { text: tr.lobby.signOut, style: "destructive", onPress: () => { void signOut().then(() => router.replace("/")); } },
   ]);
   const startBotMatch = (tutorial = false) => {

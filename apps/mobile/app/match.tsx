@@ -15,6 +15,7 @@ import { supabase } from "@/auth/supabase";
 import { getChatStyle, type ChatStyleId } from "@/cosmetics/chat-style";
 import { freeEmotesFallback, loadOwnedEmotes, type OwnedEmote } from "@/cosmetics/emotes";
 import { badgeGlyph, defaultLoadout, getCosmeticLoadout, pitchThemes, type CosmeticLoadout } from "@/cosmetics/loadout";
+import { playSfx, preloadSounds, stopLobbyMusic } from "@/audio/sounds";
 
 type UiPhase = "WAITING" | "READY" | "SELECTING" | "COUNTDOWN" | "ANSWERING" | "REVEAL" | "FINISHED" | "PAUSED";
 type AnswerFeedback = "correct" | "wrong" | null;
@@ -199,6 +200,12 @@ export default function Match() {
   const stageEntrance = useRef(new Animated.Value(1)).current;
   const handledSuddenDeath = useRef(0);
   const finishedHandled = useRef(false);
+  const lastTickSecond = useRef<number | null>(null);
+  const finishSfxPlayed = useRef(false);
+  useEffect(() => {
+    void stopLobbyMusic();
+    void preloadSounds();
+  }, []);
   useEffect(() => { void saveActiveMatch(botMode ? { matchId, playerId, mode: "bot" } : { matchId, playerId }); }, [botMode, matchId, playerId]);
   useEffect(() => { if (botMode) return; void supabase.rpc("social_set_presence", { p_state: "IN_MATCH" }); return () => { void supabase.rpc("social_set_presence", { p_state: "ONLINE" }); }; }, [botMode]);
   useEffect(() => {
@@ -240,25 +247,46 @@ export default function Match() {
   useEffect(() => {
     if (!acceptedEvent?.event_id || handledAccepted.current === acceptedEvent.event_id) return;
     handledAccepted.current = acceptedEvent.event_id;
-    if (acceptedEvent.payload.correct === false) void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-    else if (acceptedEvent.payload.last_second === true) void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    else void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (acceptedEvent.payload.correct === false) {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      void playSfx("wrong");
+    } else if (acceptedEvent.payload.last_second === true) {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      void playSfx("correct");
+    } else {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      void playSfx("correct");
+    }
   }, [acceptedEvent]);
   useEffect(() => {
     if (!revealEvent?.event_id || handledReveal.current === revealEvent.event_id) return;
     handledReveal.current = revealEvent.event_id;
     const submissions = (revealEvent.payload.submissions ?? []) as { player_id?: string; correct?: boolean }[];
-    if (revealEvent.payload.round_winner_id === playerId) { setConfettiKey(revealEvent.event_id); void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); }
-    else if (submissions.some(item => item.player_id === playerId && item.correct === false)) void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    if (revealEvent.payload.round_winner_id === playerId) {
+      setConfettiKey(revealEvent.event_id);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } else if (submissions.some(item => item.player_id === playerId && item.correct === false)) {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    }
   }, [playerId, revealEvent]);
   useEffect(() => {
     if (!state.suddenDeathPulse || handledSuddenDeath.current === state.suddenDeathPulse) return;
     handledSuddenDeath.current = state.suddenDeathPulse;
     setShowSuddenDeath(true);
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    void playSfx("sudden_death");
     const timer = setTimeout(() => setShowSuddenDeath(false), reducedMotion ? 900 : 1_800);
     return () => clearTimeout(timer);
   }, [reducedMotion, state.suddenDeathPulse]);
+  useEffect(() => {
+    if (state.phase !== "FINISHED" || finishSfxPlayed.current) return;
+    finishSfxPlayed.current = true;
+    void playSfx("finish");
+  }, [state.phase]);
+  useEffect(() => {
+    if (!state.quickMessage?.eventId) return;
+    void playSfx("emote");
+  }, [state.quickMessage?.eventId]);
   useEffect(() => {
     if (botMode || state.phase !== "FINISHED" || state.rematchOfferId) return;
     let alive = true;
@@ -270,6 +298,20 @@ export default function Match() {
     return () => { alive = false; clearInterval(timer); };
   }, [botMode, matchId, playerId, state.phase, state.rematchOfferId]);
   const seconds = state.deadline ? Math.max(0, Math.ceil((state.deadline - now) / 1000)) : null;
+  useEffect(() => {
+    if (state.phase !== "ANSWERING" || seconds == null) {
+      lastTickSecond.current = null;
+      return;
+    }
+    if (seconds > 3 || seconds <= 0) {
+      lastTickSecond.current = seconds;
+      return;
+    }
+    if (lastTickSecond.current === seconds) return;
+    lastTickSecond.current = seconds;
+    void playSfx("tick");
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, [seconds, state.phase]);
   const normalizedClubQuery = normalizeAnswer(clubQuery);
   const clubResults = useMemo(() => normalizedClubQuery.length < 2 ? [] : state.searchableClubs.filter(club => !chosenClubIds.includes(club.id) && normalizeAnswer(club.name).includes(normalizedClubQuery)).sort((a, b) => {
     const aName = normalizeAnswer(a.name); const bName = normalizeAnswer(b.name);

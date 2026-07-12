@@ -153,6 +153,12 @@ const dictionaries = {
       tipReveal: "Doğru ismi rakibinden önce bulan turu kazanır. Bu maçta kupa yok.",
       done: "Antrenman tamamlandı. Artık Hızlı Maç'a girebilir veya bir arkadaşını davet edebilirsin.",
     },
+    audio: {
+      sfxOn: "Maç sesleri: açık",
+      sfxOff: "Maç sesleri: kapalı",
+      musicOn: "Lobi müziği: açık",
+      musicOff: "Lobi müziği: kapalı",
+    },
   },
   en: {
     common: { signIn: "Sign in", signUp: "Create account", player: "player", trophies: "trophies", blitzTrophies: "blitz trophies", chatStyle: "CHAT BUBBLE", emotes: "EMOJIS", coins: "COINS", dollars: "DOLLARS", coinBalance: (n: number) => `${n} coins`, dollarBalance: (n: number) => `${n} dollars` },
@@ -307,6 +313,12 @@ const dictionaries = {
       tipAnswer: "Find the player who links both clubs from the three names shown.",
       tipReveal: "The first correct link takes the round. Training matches never affect trophies.",
       done: "Training complete. You are ready for a Quick Match or a game with friends.",
+    },
+    audio: {
+      sfxOn: "Match SFX: on",
+      sfxOff: "Match SFX: off",
+      musicOn: "Lobby music: on",
+      musicOff: "Lobby music: off",
     },
   },
 } as const;

@@ -72,6 +72,16 @@ Kurallar: serbest metin chat yok; canned text + emoji only; 1.5s cooldown; premi
 
 Kurallar: classic/blitz kupa dokunulmaz; aynı anda tek LIVE; süre admin start/end.
 
+## Phase 8 — Audio polish (kodlandı, placeholder clip)
+
+| ID | Özellik | Durum |
+|---|---|---|
+| A1 | Match UI SFX (correct/wrong/tick/SD/finish/emote) | ✅ `expo-audio` + `src/audio` |
+| A2 | SFX / lobby music mute (AsyncStorage) | ✅ hesap menüsü toggle |
+| A3 | Lobby loop music | ✅ soft pad, focus start / blur stop |
+
+Kurallar: müzik maça girince kesilir; SFX mute haptic’i bozmaz; clip’ler placeholder WAV — prod asset sonra.
+
 ## Asla (MVP / adalet)
 
 - Serbest sohbet, spectator, pay-for-answer, reveal-all-names IAP, ranked bot, ping compensation
