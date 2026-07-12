@@ -6,7 +6,7 @@
     "plugins": [
       "expo-router",
       "expo-web-browser",
-      "expo-audio"
+      "expo-av"
     ],
     "experiments": {
       "typedRoutes": true
