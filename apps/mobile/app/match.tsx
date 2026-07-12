@@ -307,12 +307,15 @@ export default function Match() {
   }, [botMode, matchId, playerId, state.phase, state.rematchOfferId]);
   const seconds = state.deadline ? Math.max(0, Math.ceil((state.deadline - now) / 1000)) : null;
   useEffect(() => {
-    if (state.phase !== "ANSWERING" || seconds == null) {
+    // COUNTDOWN = round kickoff 3-2-1; ANSWERING = urgency ticks on last 3s.
+    if (seconds == null || seconds <= 0) {
       lastTickSecond.current = null;
       return;
     }
-    if (seconds > 3 || seconds <= 0) {
-      lastTickSecond.current = seconds;
+    const countdownTick = state.phase === "COUNTDOWN";
+    const answerUrgencyTick = state.phase === "ANSWERING" && seconds <= 3;
+    if (!countdownTick && !answerUrgencyTick) {
+      lastTickSecond.current = null;
       return;
     }
     if (lastTickSecond.current === seconds) return;
