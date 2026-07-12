@@ -1,0 +1,1 @@
+{"name":"@football-link/data-import","version":"0.1.0","type":"module","scripts":{"start":"tsx src/index.ts","test":"vitest run","typecheck":"tsc --noEmit"},"dependencies":{"@football-link/answer-normalizer":"workspace:*"},"devDependencies":{"@types/node":"^22.15.30","tsx":"^4.20.3","typescript":"^5.8.3","vitest":"^3.2.4"}}

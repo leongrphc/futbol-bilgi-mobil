@@ -1,0 +1,1 @@
+{"name":"@football-link/game-engine","version":"0.1.0","type":"module","exports":"./src/index.ts","scripts":{"test":"vitest run","typecheck":"tsc --noEmit"},"dependencies":{"@football-link/answer-normalizer":"workspace:*","@football-link/shared":"workspace:*"},"devDependencies":{"typescript":"^5.8.3","vitest":"^3.2.4"}}

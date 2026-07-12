@@ -1,0 +1,21 @@
+name = "football-link-match-server"
+main = "src/index.ts"
+compatibility_date = "2026-07-11"
+workers_dev = true
+preview_urls = false
+
+[[durable_objects.bindings]]
+name = "MATCH_ROOM"
+class_name = "MatchRoom"
+
+[[durable_objects.bindings]]
+name = "MATCH_QUEUE"
+class_name = "MatchQueue"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["MatchRoom"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["MatchQueue"]

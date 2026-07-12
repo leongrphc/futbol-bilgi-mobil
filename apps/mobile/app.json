@@ -1,0 +1,20 @@
+{
+  "expo": {
+    "name": "Football Link",
+    "slug": "football-link",
+    "scheme": "footballlink",
+    "plugins": [
+      "expo-router",
+      "expo-web-browser"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "android": {
+      "package": "com.footballlink.mvp"
+    },
+    "ios": {
+      "bundleIdentifier": "com.footballlink.mvp"
+    }
+  }
+}

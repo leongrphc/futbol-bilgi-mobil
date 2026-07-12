@@ -1,0 +1,82 @@
+{
+  "generated_at": "2026-07-12T10:08:55.354037+00:00",
+  "summary": {
+    "clubs": 131,
+    "players": 59712,
+    "verified_players": 49363,
+    "memberships": 186218,
+    "verified_memberships": 157146,
+    "evidence": 125574,
+    "playable_pairs": 7326,
+    "strong_pairs": 4628
+  },
+  "sources": [
+    {
+      "source": "WIKIPEDIA_CATEGORY",
+      "players": 48416,
+      "memberships": 72169,
+      "verified": 72169
+    },
+    {
+      "source": "WIKIPEDIA_INFOBOX",
+      "players": 31481,
+      "memberships": 58067,
+      "verified": 58067
+    },
+    {
+      "source": "WIKIDATA",
+      "players": 36755,
+      "memberships": 55508,
+      "verified": 26436
+    },
+    {
+      "source": "DEMO",
+      "players": 161,
+      "memberships": 472,
+      "verified": 472
+    },
+    {
+      "source": "MANUAL",
+      "players": 1,
+      "memberships": 2,
+      "verified": 2
+    }
+  ],
+  "clubs_without_wikipedia_category": [
+    {
+      "slug": "besiktas",
+      "name": "Beşiktaş",
+      "league": "Süper Lig"
+    },
+    {
+      "slug": "bayer-leverkusen",
+      "name": "Bayer Leverkusen",
+      "league": "Bundesliga"
+    },
+    {
+      "slug": "celta-vigo",
+      "name": "Celta Vigo",
+      "league": "La Liga"
+    },
+    {
+      "slug": "deportivo-la-coruna",
+      "name": "Deportivo La Coruña",
+      "league": "La Liga"
+    },
+    {
+      "slug": "rennes",
+      "name": "Rennes",
+      "league": "Ligue 1"
+    },
+    {
+      "slug": "vitoria-guimaraes",
+      "name": "Vitória Guimarães",
+      "league": "Primeira Liga"
+    },
+    {
+      "slug": "al-ittihad",
+      "name": "Al Ittihad",
+      "league": "Saudi Pro League"
+    }
+  ]
+}

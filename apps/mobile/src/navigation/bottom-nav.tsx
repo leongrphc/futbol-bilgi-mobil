@@ -1,0 +1,10 @@
+import { useCallback } from "react";
+import { router, useFocusEffect, usePathname } from "expo-router";
+import { BackHandler, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { colors } from "@/theme/colors";
+import { tr } from "@/i18n";
+
+const items = [{ path: "/lobby", icon: "⌂", label: () => tr.nav.play }, { path: "/friends", icon: "◉", label: () => tr.nav.friends }, { path: "/competition", icon: "♜", label: () => tr.nav.league }, { path: "/cosmetics", icon: "✦", label: () => tr.nav.style }];
+export function BottomNav() { const pathname = usePathname(); const insets = useSafeAreaInsets(); useFocusEffect(useCallback(() => { if (Platform.OS !== "android") return; const subscription = BackHandler.addEventListener("hardwareBackPress", () => { if (pathname !== "/lobby") router.replace("/lobby"); else BackHandler.exitApp(); return true; }); return () => subscription.remove(); }, [pathname])); return <View style={[styles.wrap,{paddingBottom:Math.max(insets.bottom,8)}]}>{items.map(item=>{const active=pathname===item.path;return <Pressable key={item.path} accessibilityRole="tab" accessibilityState={{selected:active}} onPress={()=>router.replace(item.path as never)} style={[styles.item,active&&styles.itemActive]}><Text style={[styles.icon,active&&styles.active]}>{item.icon}</Text><Text style={[styles.label,active&&styles.active]}>{item.label()}</Text></Pressable>})}</View>; }
+const styles=StyleSheet.create({wrap:{position:"absolute",left:12,right:12,bottom:8,flexDirection:"row",justifyContent:"space-around",backgroundColor:"rgba(16,34,46,.97)",borderRadius:22,borderWidth:1,borderColor:colors.border,paddingTop:7,paddingHorizontal:6,shadowColor:"#000",shadowOpacity:.3,shadowRadius:14,shadowOffset:{width:0,height:8},elevation:9},item:{alignItems:"center",justifyContent:"center",minWidth:64,minHeight:48,gap:2,borderRadius:15},itemActive:{backgroundColor:colors.surfaceElevated},icon:{color:colors.muted,fontSize:18,fontWeight:"800"},label:{color:colors.muted,fontSize:9,fontWeight:"900",letterSpacing:.2},active:{color:colors.floodlight}});

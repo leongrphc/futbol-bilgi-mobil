@@ -1,0 +1,1469 @@
+{
+  "generated_at": "2026-07-11T21:55:28.741530+00:00",
+  "summary": {
+    "clubs": 131,
+    "resolved_clubs": 6,
+    "players": 161,
+    "verified_players": 161,
+    "memberships": 474,
+    "verified_memberships": 474,
+    "pairs": 8515,
+    "playable_pairs": 245,
+    "good_pairs": 68,
+    "needs_review_pairs": 0
+  },
+  "unresolved_clubs": [
+    {
+      "slug": "borussia-dortmund",
+      "name": "Borussia Dortmund",
+      "league": "Bundesliga",
+      "wikidata_search": "Borussia Dortmund"
+    },
+    {
+      "slug": "ajax",
+      "name": "Ajax",
+      "league": "Eredivisie",
+      "wikidata_search": "AFC Ajax"
+    },
+    {
+      "slug": "feyenoord",
+      "name": "Feyenoord",
+      "league": "Eredivisie",
+      "wikidata_search": "Feyenoord"
+    },
+    {
+      "slug": "psv",
+      "name": "PSV",
+      "league": "Eredivisie",
+      "wikidata_search": "PSV Eindhoven"
+    },
+    {
+      "slug": "atletico-madrid",
+      "name": "Atlético Madrid",
+      "league": "La Liga",
+      "wikidata_search": "Atlético Madrid"
+    },
+    {
+      "slug": "psg",
+      "name": "Paris Saint-Germain",
+      "league": "Ligue 1",
+      "wikidata_search": "Paris Saint-Germain F.C."
+    },
+    {
+      "slug": "liverpool",
+      "name": "Liverpool",
+      "league": "Premier League",
+      "wikidata_search": "Liverpool F.C."
+    },
+    {
+      "slug": "manchester-city",
+      "name": "Manchester City",
+      "league": "Premier League",
+      "wikidata_search": "Manchester City F.C."
+    },
+    {
+      "slug": "tottenham",
+      "name": "Tottenham Hotspur",
+      "league": "Premier League",
+      "wikidata_search": "Tottenham Hotspur F.C."
+    },
+    {
+      "slug": "benfica",
+      "name": "Benfica",
+      "league": "Primeira Liga",
+      "wikidata_search": "S.L. Benfica"
+    },
+    {
+      "slug": "porto",
+      "name": "Porto",
+      "league": "Primeira Liga",
+      "wikidata_search": "FC Porto"
+    },
+    {
+      "slug": "sporting-cp",
+      "name": "Sporting CP",
+      "league": "Primeira Liga",
+      "wikidata_search": "Sporting CP"
+    },
+    {
+      "slug": "celtic",
+      "name": "Celtic",
+      "league": "Scottish Premiership",
+      "wikidata_search": "Celtic F.C."
+    },
+    {
+      "slug": "rangers",
+      "name": "Rangers",
+      "league": "Scottish Premiership",
+      "wikidata_search": "Rangers F.C."
+    },
+    {
+      "slug": "ac-milan",
+      "name": "AC Milan",
+      "league": "Serie A",
+      "wikidata_search": "AC Milan"
+    },
+    {
+      "slug": "inter-milan",
+      "name": "Inter Milan",
+      "league": "Serie A",
+      "wikidata_search": "Inter Milan"
+    },
+    {
+      "slug": "juventus",
+      "name": "Juventus",
+      "league": "Serie A",
+      "wikidata_search": "Juventus FC"
+    },
+    {
+      "slug": "besiktas",
+      "name": "Beşiktaş",
+      "league": "Süper Lig",
+      "wikidata_search": "Beşiktaş J.K. football"
+    },
+    {
+      "slug": "fenerbahce",
+      "name": "Fenerbahçe",
+      "league": "Süper Lig",
+      "wikidata_search": "Fenerbahçe S.K. football"
+    },
+    {
+      "slug": "galatasaray",
+      "name": "Galatasaray",
+      "league": "Süper Lig",
+      "wikidata_search": "Galatasaray S.K. football"
+    },
+    {
+      "slug": "trabzonspor",
+      "name": "Trabzonspor",
+      "league": "Süper Lig",
+      "wikidata_search": "Trabzonspor"
+    },
+    {
+      "slug": "austria-wien",
+      "name": "Austria Wien",
+      "league": "Austrian Bundesliga",
+      "wikidata_search": "FK Austria Wien"
+    },
+    {
+      "slug": "rapid-wien",
+      "name": "Rapid Wien",
+      "league": "Austrian Bundesliga",
+      "wikidata_search": "SK Rapid Wien"
+    },
+    {
+      "slug": "red-bull-salzburg",
+      "name": "Red Bull Salzburg",
+      "league": "Austrian Bundesliga",
+      "wikidata_search": "FC Red Bull Salzburg"
+    },
+    {
+      "slug": "anderlecht",
+      "name": "Anderlecht",
+      "league": "Belgian Pro League",
+      "wikidata_search": "R.S.C. Anderlecht"
+    },
+    {
+      "slug": "club-brugge",
+      "name": "Club Brugge",
+      "league": "Belgian Pro League",
+      "wikidata_search": "Club Brugge KV"
+    },
+    {
+      "slug": "genk",
+      "name": "Genk",
+      "league": "Belgian Pro League",
+      "wikidata_search": "K.R.C. Genk"
+    },
+    {
+      "slug": "gent",
+      "name": "Gent",
+      "league": "Belgian Pro League",
+      "wikidata_search": "K.A.A. Gent"
+    },
+    {
+      "slug": "standard-liege",
+      "name": "Standard Liège",
+      "league": "Belgian Pro League",
+      "wikidata_search": "Standard Liège"
+    },
+    {
+      "slug": "bayer-leverkusen",
+      "name": "Bayer Leverkusen",
+      "league": "Bundesliga",
+      "wikidata_search": "Bayer 04 Leverkusen"
+    },
+    {
+      "slug": "borussia-monchengladbach",
+      "name": "Borussia Mönchengladbach",
+      "league": "Bundesliga",
+      "wikidata_search": "Borussia Mönchengladbach"
+    },
+    {
+      "slug": "eintracht-frankfurt",
+      "name": "Eintracht Frankfurt",
+      "league": "Bundesliga",
+      "wikidata_search": "Eintracht Frankfurt"
+    },
+    {
+      "slug": "hamburg",
+      "name": "Hamburg",
+      "league": "Bundesliga",
+      "wikidata_search": "Hamburger SV"
+    },
+    {
+      "slug": "hoffenheim",
+      "name": "Hoffenheim",
+      "league": "Bundesliga",
+      "wikidata_search": "TSG 1899 Hoffenheim"
+    },
+    {
+      "slug": "rb-leipzig",
+      "name": "RB Leipzig",
+      "league": "Bundesliga",
+      "wikidata_search": "RB Leipzig"
+    },
+    {
+      "slug": "schalke",
+      "name": "Schalke 04",
+      "league": "Bundesliga",
+      "wikidata_search": "FC Schalke 04"
+    },
+    {
+      "slug": "stuttgart",
+      "name": "Stuttgart",
+      "league": "Bundesliga",
+      "wikidata_search": "VfB Stuttgart"
+    },
+    {
+      "slug": "werder-bremen",
+      "name": "Werder Bremen",
+      "league": "Bundesliga",
+      "wikidata_search": "SV Werder Bremen"
+    },
+    {
+      "slug": "wolfsburg",
+      "name": "Wolfsburg",
+      "league": "Bundesliga",
+      "wikidata_search": "VfL Wolfsburg"
+    },
+    {
+      "slug": "dinamo-zagreb",
+      "name": "Dinamo Zagreb",
+      "league": "Croatian Football League",
+      "wikidata_search": "GNK Dinamo Zagreb"
+    },
+    {
+      "slug": "hajduk-split",
+      "name": "Hajduk Split",
+      "league": "Croatian Football League",
+      "wikidata_search": "HNK Hajduk Split"
+    },
+    {
+      "slug": "slavia-prague",
+      "name": "Slavia Prague",
+      "league": "Czech First League",
+      "wikidata_search": "SK Slavia Prague"
+    },
+    {
+      "slug": "sparta-prague",
+      "name": "Sparta Prague",
+      "league": "Czech First League",
+      "wikidata_search": "AC Sparta Prague"
+    },
+    {
+      "slug": "brondby",
+      "name": "Brøndby",
+      "league": "Danish Superliga",
+      "wikidata_search": "Brøndby IF"
+    },
+    {
+      "slug": "copenhagen",
+      "name": "Copenhagen",
+      "league": "Danish Superliga",
+      "wikidata_search": "F.C. Copenhagen"
+    },
+    {
+      "slug": "az-alkmaar",
+      "name": "AZ Alkmaar",
+      "league": "Eredivisie",
+      "wikidata_search": "AZ Alkmaar"
+    },
+    {
+      "slug": "twente",
+      "name": "Twente",
+      "league": "Eredivisie",
+      "wikidata_search": "FC Twente"
+    },
+    {
+      "slug": "utrecht",
+      "name": "Utrecht",
+      "league": "Eredivisie",
+      "wikidata_search": "FC Utrecht"
+    },
+    {
+      "slug": "athletic-bilbao",
+      "name": "Athletic Bilbao",
+      "league": "La Liga",
+      "wikidata_search": "Athletic Club"
+    },
+    {
+      "slug": "celta-vigo",
+      "name": "Celta Vigo",
+      "league": "La Liga",
+      "wikidata_search": "RC Celta de Vigo"
+    },
+    {
+      "slug": "deportivo-la-coruna",
+      "name": "Deportivo La Coruña",
+      "league": "La Liga",
+      "wikidata_search": "Deportivo de La Coruña"
+    },
+    {
+      "slug": "malaga",
+      "name": "Málaga",
+      "league": "La Liga",
+      "wikidata_search": "Málaga CF"
+    },
+    {
+      "slug": "real-betis",
+      "name": "Real Betis",
+      "league": "La Liga",
+      "wikidata_search": "Real Betis"
+    },
+    {
+      "slug": "real-sociedad",
+      "name": "Real Sociedad",
+      "league": "La Liga",
+      "wikidata_search": "Real Sociedad"
+    },
+    {
+      "slug": "sevilla",
+      "name": "Sevilla",
+      "league": "La Liga",
+      "wikidata_search": "Sevilla FC"
+    },
+    {
+      "slug": "valencia",
+      "name": "Valencia",
+      "league": "La Liga",
+      "wikidata_search": "Valencia CF"
+    },
+    {
+      "slug": "villarreal",
+      "name": "Villarreal",
+      "league": "La Liga",
+      "wikidata_search": "Villarreal CF"
+    },
+    {
+      "slug": "bordeaux",
+      "name": "Bordeaux",
+      "league": "Ligue 1",
+      "wikidata_search": "FC Girondins de Bordeaux"
+    },
+    {
+      "slug": "lens",
+      "name": "Lens",
+      "league": "Ligue 1",
+      "wikidata_search": "RC Lens"
+    },
+    {
+      "slug": "lille",
+      "name": "Lille",
+      "league": "Ligue 1",
+      "wikidata_search": "Lille OSC"
+    },
+    {
+      "slug": "lyon",
+      "name": "Lyon",
+      "league": "Ligue 1",
+      "wikidata_search": "Olympique Lyonnais"
+    },
+    {
+      "slug": "marseille",
+      "name": "Marseille",
+      "league": "Ligue 1",
+      "wikidata_search": "Olympique de Marseille"
+    },
+    {
+      "slug": "monaco",
+      "name": "Monaco",
+      "league": "Ligue 1",
+      "wikidata_search": "AS Monaco FC"
+    },
+    {
+      "slug": "montpellier",
+      "name": "Montpellier",
+      "league": "Ligue 1",
+      "wikidata_search": "Montpellier HSC"
+    },
+    {
+      "slug": "nantes",
+      "name": "Nantes",
+      "league": "Ligue 1",
+      "wikidata_search": "FC Nantes"
+    },
+    {
+      "slug": "nice",
+      "name": "Nice",
+      "league": "Ligue 1",
+      "wikidata_search": "OGC Nice"
+    },
+    {
+      "slug": "rennes",
+      "name": "Rennes",
+      "league": "Ligue 1",
+      "wikidata_search": "Stade Rennais FC"
+    },
+    {
+      "slug": "saint-etienne",
+      "name": "Saint-Étienne",
+      "league": "Ligue 1",
+      "wikidata_search": "AS Saint-Étienne"
+    },
+    {
+      "slug": "aston-villa",
+      "name": "Aston Villa",
+      "league": "Premier League",
+      "wikidata_search": "Aston Villa F.C."
+    },
+    {
+      "slug": "everton",
+      "name": "Everton",
+      "league": "Premier League",
+      "wikidata_search": "Everton F.C."
+    },
+    {
+      "slug": "leeds",
+      "name": "Leeds United",
+      "league": "Premier League",
+      "wikidata_search": "Leeds United F.C."
+    },
+    {
+      "slug": "leicester",
+      "name": "Leicester City",
+      "league": "Premier League",
+      "wikidata_search": "Leicester City F.C."
+    },
+    {
+      "slug": "newcastle",
+      "name": "Newcastle United",
+      "league": "Premier League",
+      "wikidata_search": "Newcastle United F.C."
+    },
+    {
+      "slug": "nottingham-forest",
+      "name": "Nottingham Forest",
+      "league": "Premier League",
+      "wikidata_search": "Nottingham Forest F.C."
+    },
+    {
+      "slug": "southampton",
+      "name": "Southampton",
+      "league": "Premier League",
+      "wikidata_search": "Southampton F.C."
+    },
+    {
+      "slug": "west-ham",
+      "name": "West Ham United",
+      "league": "Premier League",
+      "wikidata_search": "West Ham United F.C."
+    },
+    {
+      "slug": "boavista",
+      "name": "Boavista",
+      "league": "Primeira Liga",
+      "wikidata_search": "Boavista F.C."
+    },
+    {
+      "slug": "braga",
+      "name": "Braga",
+      "league": "Primeira Liga",
+      "wikidata_search": "S.C. Braga"
+    },
+    {
+      "slug": "vitoria-guimaraes",
+      "name": "Vitória Guimarães",
+      "league": "Primeira Liga",
+      "wikidata_search": "Vitória S.C."
+    },
+    {
+      "slug": "aberdeen",
+      "name": "Aberdeen",
+      "league": "Scottish Premiership",
+      "wikidata_search": "Aberdeen F.C."
+    },
+    {
+      "slug": "hearts",
+      "name": "Heart of Midlothian",
+      "league": "Scottish Premiership",
+      "wikidata_search": "Heart of Midlothian F.C."
+    },
+    {
+      "slug": "partizan",
+      "name": "Partizan",
+      "league": "Serbian SuperLiga",
+      "wikidata_search": "FK Partizan"
+    },
+    {
+      "slug": "red-star-belgrade",
+      "name": "Red Star Belgrade",
+      "league": "Serbian SuperLiga",
+      "wikidata_search": "Red Star Belgrade"
+    },
+    {
+      "slug": "atalanta",
+      "name": "Atalanta",
+      "league": "Serie A",
+      "wikidata_search": "Atalanta BC"
+    },
+    {
+      "slug": "bologna",
+      "name": "Bologna",
+      "league": "Serie A",
+      "wikidata_search": "Bologna FC 1909"
+    },
+    {
+      "slug": "fiorentina",
+      "name": "Fiorentina",
+      "league": "Serie A",
+      "wikidata_search": "ACF Fiorentina"
+    },
+    {
+      "slug": "lazio",
+      "name": "Lazio",
+      "league": "Serie A",
+      "wikidata_search": "SS Lazio"
+    },
+    {
+      "slug": "napoli",
+      "name": "Napoli",
+      "league": "Serie A",
+      "wikidata_search": "SSC Napoli"
+    },
+    {
+      "slug": "parma",
+      "name": "Parma",
+      "league": "Serie A",
+      "wikidata_search": "Parma Calcio 1913"
+    },
+    {
+      "slug": "roma",
+      "name": "Roma",
+      "league": "Serie A",
+      "wikidata_search": "AS Roma"
+    },
+    {
+      "slug": "sampdoria",
+      "name": "Sampdoria",
+      "league": "Serie A",
+      "wikidata_search": "UC Sampdoria"
+    },
+    {
+      "slug": "torino",
+      "name": "Torino",
+      "league": "Serie A",
+      "wikidata_search": "Torino FC"
+    },
+    {
+      "slug": "aek-athens",
+      "name": "AEK Athens",
+      "league": "Super League Greece",
+      "wikidata_search": "AEK Athens F.C."
+    },
+    {
+      "slug": "olympiacos",
+      "name": "Olympiacos",
+      "league": "Super League Greece",
+      "wikidata_search": "Olympiacos F.C."
+    },
+    {
+      "slug": "paok",
+      "name": "PAOK",
+      "league": "Super League Greece",
+      "wikidata_search": "PAOK FC"
+    },
+    {
+      "slug": "panathinaikos",
+      "name": "Panathinaikos",
+      "league": "Super League Greece",
+      "wikidata_search": "Panathinaikos F.C."
+    },
+    {
+      "slug": "basel",
+      "name": "Basel",
+      "league": "Swiss Super League",
+      "wikidata_search": "FC Basel"
+    },
+    {
+      "slug": "young-boys",
+      "name": "Young Boys",
+      "league": "Swiss Super League",
+      "wikidata_search": "BSC Young Boys"
+    },
+    {
+      "slug": "adana-demirspor",
+      "name": "Adana Demirspor",
+      "league": "Süper Lig",
+      "wikidata_search": "Adana Demirspor"
+    },
+    {
+      "slug": "antalyaspor",
+      "name": "Antalyaspor",
+      "league": "Süper Lig",
+      "wikidata_search": "Antalyaspor"
+    },
+    {
+      "slug": "bursaspor",
+      "name": "Bursaspor",
+      "league": "Süper Lig",
+      "wikidata_search": "Bursaspor"
+    },
+    {
+      "slug": "genclerbirligi",
+      "name": "Gençlerbirliği",
+      "league": "Süper Lig",
+      "wikidata_search": "Gençlerbirliği S.K."
+    },
+    {
+      "slug": "goztepe",
+      "name": "Göztepe",
+      "league": "Süper Lig",
+      "wikidata_search": "Göztepe S.K."
+    },
+    {
+      "slug": "kasimpasa",
+      "name": "Kasımpaşa",
+      "league": "Süper Lig",
+      "wikidata_search": "Kasımpaşa S.K."
+    },
+    {
+      "slug": "kayserispor",
+      "name": "Kayserispor",
+      "league": "Süper Lig",
+      "wikidata_search": "Kayserispor"
+    },
+    {
+      "slug": "konyaspor",
+      "name": "Konyaspor",
+      "league": "Süper Lig",
+      "wikidata_search": "Konyaspor"
+    },
+    {
+      "slug": "sivasspor",
+      "name": "Sivasspor",
+      "league": "Süper Lig",
+      "wikidata_search": "Sivasspor"
+    },
+    {
+      "slug": "istanbul-basaksehir",
+      "name": "İstanbul Başakşehir",
+      "league": "Süper Lig",
+      "wikidata_search": "İstanbul Başakşehir F.K."
+    },
+    {
+      "slug": "dnipro",
+      "name": "Dnipro",
+      "league": "Ukrainian Premier League",
+      "wikidata_search": "FC Dnipro"
+    },
+    {
+      "slug": "dynamo-kyiv",
+      "name": "Dynamo Kyiv",
+      "league": "Ukrainian Premier League",
+      "wikidata_search": "FC Dynamo Kyiv"
+    },
+    {
+      "slug": "shakhtar-donetsk",
+      "name": "Shakhtar Donetsk",
+      "league": "Ukrainian Premier League",
+      "wikidata_search": "FC Shakhtar Donetsk"
+    },
+    {
+      "slug": "boca-juniors",
+      "name": "Boca Juniors",
+      "league": "Argentine Primera División",
+      "wikidata_search": "Boca Juniors"
+    },
+    {
+      "slug": "racing-club",
+      "name": "Racing Club",
+      "league": "Argentine Primera División",
+      "wikidata_search": "Racing Club de Avellaneda"
+    },
+    {
+      "slug": "river-plate",
+      "name": "River Plate",
+      "league": "Argentine Primera División",
+      "wikidata_search": "Club Atlético River Plate"
+    },
+    {
+      "slug": "corinthians",
+      "name": "Corinthians",
+      "league": "Campeonato Brasileiro Série A",
+      "wikidata_search": "Sport Club Corinthians Paulista"
+    },
+    {
+      "slug": "flamengo",
+      "name": "Flamengo",
+      "league": "Campeonato Brasileiro Série A",
+      "wikidata_search": "CR Flamengo"
+    },
+    {
+      "slug": "palmeiras",
+      "name": "Palmeiras",
+      "league": "Campeonato Brasileiro Série A",
+      "wikidata_search": "SE Palmeiras"
+    },
+    {
+      "slug": "santos",
+      "name": "Santos",
+      "league": "Campeonato Brasileiro Série A",
+      "wikidata_search": "Santos FC"
+    },
+    {
+      "slug": "inter-miami",
+      "name": "Inter Miami",
+      "league": "Major League Soccer",
+      "wikidata_search": "Inter Miami CF"
+    },
+    {
+      "slug": "la-galaxy",
+      "name": "LA Galaxy",
+      "league": "Major League Soccer",
+      "wikidata_search": "LA Galaxy"
+    },
+    {
+      "slug": "new-york-city",
+      "name": "New York City FC",
+      "league": "Major League Soccer",
+      "wikidata_search": "New York City FC"
+    },
+    {
+      "slug": "al-ahli-saudi",
+      "name": "Al Ahli",
+      "league": "Saudi Pro League",
+      "wikidata_search": "Al-Ahli Saudi FC"
+    },
+    {
+      "slug": "al-hilal",
+      "name": "Al Hilal",
+      "league": "Saudi Pro League",
+      "wikidata_search": "Al Hilal SFC"
+    },
+    {
+      "slug": "al-ittihad",
+      "name": "Al Ittihad",
+      "league": "Saudi Pro League",
+      "wikidata_search": "Al-Ittihad Club"
+    },
+    {
+      "slug": "al-nassr",
+      "name": "Al Nassr",
+      "league": "Saudi Pro League",
+      "wikidata_search": "Al Nassr FC"
+    }
+  ],
+  "thin_pairs": [
+    {
+      "club_a": "AC Milan",
+      "club_b": "Bayer Leverkusen",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "AC Milan",
+      "club_b": "Beşiktaş",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "AC Milan",
+      "club_b": "Borussia Dortmund",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "AC Milan",
+      "club_b": "Marseille",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "AC Milan",
+      "club_b": "Trabzonspor",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Arsenal",
+      "club_b": "AC Milan",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Arsenal",
+      "club_b": "Atlético Madrid",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Arsenal",
+      "club_b": "Bayern Münih",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Arsenal",
+      "club_b": "Lyon",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Arsenal",
+      "club_b": "Manchester City",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Arsenal",
+      "club_b": "Napoli",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Atlético Madrid",
+      "club_b": "Beşiktaş",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Atlético Madrid",
+      "club_b": "Inter Milan",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Atlético Madrid",
+      "club_b": "Lyon",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Atlético Madrid",
+      "club_b": "Monaco",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Atlético Madrid",
+      "club_b": "Napoli",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Atlético Madrid",
+      "club_b": "Trabzonspor",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Barcelona",
+      "club_b": "AC Milan",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Barcelona",
+      "club_b": "Bayer Leverkusen",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Barcelona",
+      "club_b": "Galatasaray",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Barcelona",
+      "club_b": "RB Leipzig",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Barcelona",
+      "club_b": "Schalke 04",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Barcelona",
+      "club_b": "Sevilla",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Bayer Leverkusen",
+      "club_b": "Monaco",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Bayer Leverkusen",
+      "club_b": "Paris Saint-Germain",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Bayern Münih",
+      "club_b": "Bayer Leverkusen",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Bayern Münih",
+      "club_b": "Fenerbahçe",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Bayern Münih",
+      "club_b": "Galatasaray",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Bayern Münih",
+      "club_b": "Lille",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Bayern Münih",
+      "club_b": "Monaco",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Bayern Münih",
+      "club_b": "Trabzonspor",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Borussia Dortmund",
+      "club_b": "Beşiktaş",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Borussia Dortmund",
+      "club_b": "Fenerbahçe",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Borussia Dortmund",
+      "club_b": "Galatasaray",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Chelsea",
+      "club_b": "Bayer Leverkusen",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Chelsea",
+      "club_b": "Bayern Münih",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Chelsea",
+      "club_b": "Manchester City",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Chelsea",
+      "club_b": "Marseille",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Chelsea",
+      "club_b": "Monaco",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Chelsea",
+      "club_b": "Tottenham Hotspur",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Inter Milan",
+      "club_b": "Marseille",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Inter Milan",
+      "club_b": "Napoli",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Juventus",
+      "club_b": "Bayer Leverkusen",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Juventus",
+      "club_b": "Beşiktaş",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Juventus",
+      "club_b": "Galatasaray",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Juventus",
+      "club_b": "Lille",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Juventus",
+      "club_b": "Lyon",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Juventus",
+      "club_b": "Marseille",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Juventus",
+      "club_b": "Napoli",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Lille",
+      "club_b": "Beşiktaş",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Liverpool",
+      "club_b": "AC Milan",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Liverpool",
+      "club_b": "Lille",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Liverpool",
+      "club_b": "Monaco",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Liverpool",
+      "club_b": "Paris Saint-Germain",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Lyon",
+      "club_b": "Beşiktaş",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Lyon",
+      "club_b": "Monaco",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Manchester City",
+      "club_b": "AC Milan",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Manchester City",
+      "club_b": "Lyon",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Manchester City",
+      "club_b": "Marseille",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Manchester City",
+      "club_b": "Monaco",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Manchester City",
+      "club_b": "Paris Saint-Germain",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Manchester City",
+      "club_b": "Roma",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Manchester City",
+      "club_b": "Schalke 04",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Manchester United",
+      "club_b": "Bayern Münih",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Manchester United",
+      "club_b": "Beşiktaş",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Manchester United",
+      "club_b": "Lille",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Manchester United",
+      "club_b": "Napoli",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Manchester United",
+      "club_b": "RB Leipzig",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Manchester United",
+      "club_b": "Tottenham Hotspur",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Marseille",
+      "club_b": "Lyon",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Monaco",
+      "club_b": "Galatasaray",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Napoli",
+      "club_b": "Bayern Münih",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Napoli",
+      "club_b": "Beşiktaş",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Napoli",
+      "club_b": "Fenerbahçe",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Napoli",
+      "club_b": "Lille",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Napoli",
+      "club_b": "Trabzonspor",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Paris Saint-Germain",
+      "club_b": "Fenerbahçe",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Paris Saint-Germain",
+      "club_b": "Galatasaray",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Paris Saint-Germain",
+      "club_b": "Marseille",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "RB Leipzig",
+      "club_b": "Paris Saint-Germain",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Real Madrid",
+      "club_b": "Barcelona",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Real Madrid",
+      "club_b": "Beşiktaş",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Real Madrid",
+      "club_b": "Galatasaray",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Real Madrid",
+      "club_b": "Lille",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Real Madrid",
+      "club_b": "Napoli",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Real Madrid",
+      "club_b": "Valencia",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Roma",
+      "club_b": "Bayer Leverkusen",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Roma",
+      "club_b": "Beşiktaş",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Roma",
+      "club_b": "Napoli",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Roma",
+      "club_b": "RB Leipzig",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Schalke 04",
+      "club_b": "Paris Saint-Germain",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Sevilla",
+      "club_b": "Bayer Leverkusen",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Sevilla",
+      "club_b": "Juventus",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Sevilla",
+      "club_b": "Lyon",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Sevilla",
+      "club_b": "Paris Saint-Germain",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Sevilla",
+      "club_b": "Schalke 04",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Tottenham Hotspur",
+      "club_b": "Bayern Münih",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Tottenham Hotspur",
+      "club_b": "Beşiktaş",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Tottenham Hotspur",
+      "club_b": "Borussia Dortmund",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    },
+    {
+      "club_a": "Tottenham Hotspur",
+      "club_b": "Galatasaray",
+      "verified_player_count": 1,
+      "candidate_player_count": 1,
+      "coverage_status": "PLAYABLE"
+    }
+  ]
+}

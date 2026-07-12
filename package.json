@@ -1,0 +1,16 @@
+{
+  "name": "football-link",
+  "private": true,
+  "packageManager": "pnpm@10.13.1",
+  "scripts": {
+    "test": "pnpm -r --if-present test",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "data:import": "pnpm --filter @football-link/data-import start",
+    "dev:match": "pnpm --filter @football-link/match-server dev",
+    "dev:mobile": "pnpm --filter @football-link/mobile start",
+    "dev:admin": "pnpm --filter @football-link/admin start"
+  },
+  "devDependencies": {
+    "metro-runtime": "0.83.3"
+  }
+}

@@ -1,0 +1,27 @@
+[
+  {
+    "wikidata_qid": "Q19610875",
+    "name": "Uğurcan Çakır",
+    "aliases": ["Ugurcan Cakir", "Uğurcan Cakir", "Ugurcan Çakır"],
+    "birth_date": "1996-04-05",
+    "position": "Goalkeeper",
+    "memberships": [
+      {
+        "club": "trabzonspor",
+        "start_date": "2014-07-01",
+        "end_date": "2025-09-01",
+        "membership_type": "PERMANENT",
+        "is_current": false,
+        "note": "Trabzonspor professional first-team period"
+      },
+      {
+        "club": "galatasaray",
+        "start_date": "2025-09-01",
+        "end_date": null,
+        "membership_type": "PERMANENT",
+        "is_current": true,
+        "note": "Transferred to Galatasaray in September 2025"
+      }
+    ]
+  }
+]
