@@ -6,10 +6,11 @@ Güncel durum matrisi: [implementation-status.md](implementation-status.md)
 
 1. Phase 1 album/quests prod migration uygulandı
 2. Phase 2 sudden-death/commentator/share client-only
-3. Phase 3 tutorial bot path; solo daily kaldırıldı (`20260713190000_drop_solo_daily.sql`)
+3. Phase 3 zorunlu ilk giriş tutorial bot path; tamamlanma profilde tek seferlik saklanır, solo daily kaldırıldı (`20260713190000_drop_solo_daily.sql`)
 4. Match emotes: free 4 + premium shop + tray toggle (`20260713230000_match_emotes.sql` / prod `match_emotes`)
 5. Event Week: admin lig event, kupa yok, lobby empty/live, `/event-match` (prod `event_week_core` + `club_league_country_backfill`)
 6. Audio v1: match SFX + lobby loop + mute toggles (`expo-audio`, placeholder WAV)
+7. Üç mod: Quick/Blitz 4 zor şık, Ranked yazılı cevap; ayrı queue/kupa/ladder ve 5 Quick maçlık Ranked kilidi (`20260713290000_three_mode_ladders.sql`)
 
 Smoke: lobby tutorial kartı, bot/tutorial 3 şıklı cevap, maç emoji tray, stil odası premium unlock, control room event draft→live→end, event maç only-league pool, lobby müzik + hesap menüsü ses toggle, maç SFX (doğru/yanlış/tick/SD/bitiş/emote)
 
@@ -19,7 +20,7 @@ Detay: [feature-roadmap.md](feature-roadmap.md)
 
 1. İki cihazlı Worker persistence smoke testi ve korelasyon logları
 2. Arkadaş davet deep link'i, arkadaş isteği/listesi, hazır mesaj/emoji ve rövanş akışını iki cihazda smoke test etme
-3. Hızlı Maç iki cihazlı queue smoke testi, hazır kontrolü kuyruk davranışı ve bölgesel arama
+3. Quick/Blitz/Ranked queue'larını iki cihazda smoke test et; şıkların iki cihazda farklı sırasını, tek kullanımlık `choice_id` reddini, Ranked kilidini ve üç kupa deltasını doğrula
 
 Market/yayın aşamasına ertelendi: Google ve Apple provider anahtarları, production callback allowlist ve iki mağaza hesabıyla OAuth smoke testi. Geliştirmede e-posta hesabı ve test akışları kullanılacak.
 
@@ -35,8 +36,8 @@ Production deploy aşamasına ertelendi: Worker'a güçlü bir `MATCH_TOKEN_SECR
 
 ## P2 — Ürün katmanları
 
-1. Kupa/lig/geçmiş migration'ını deploy edip Hızlı Maçla iki cihaz smoke testi
-2. Reklam, reklam kaldırma satın alımı ve doğrulama
+1. `20260713290000_three_mode_ladders.sql` migration'ını ve Worker'ı deploy edip üç modun kupa/ladder zincirini iki cihazda smoke test et
+2. Mağaza hesapları açılınca test reklam kimliklerini gerçek AdMob kimlikleriyle değiştirme, consent akışını açma ve Google/Apple reklam kaldırma ürünlerini sunucu tarafı makbuz doğrulamasına bağlama. Test interstitial, entitlement modeli ve Shop durum kartı hazır.
 3. Kozmetik mağazası migration'ını deploy edip gerçek kilit açma/ödül kaynakları ve motion varyantları
 4. iOS ve market/hukuk hazırlığı
 

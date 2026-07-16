@@ -27,6 +27,8 @@ export const pitchThemes: Record<string, { background: string; surface: string; 
   "pitch-copper": { background: "#1B1110", surface: "#2D1D19", line: "#98613E", accent: "#F4C95D", haze: "rgba(244,201,93,.10)" },
   "pitch-floodlight": { background: "#071622", surface: "#123246", line: "#72C7FF", accent: "#C9ECFF", haze: "rgba(114,199,255,.10)" },
   "pitch-midnight": { background: "#100D20", surface: "#211A3D", line: "#705BA8", accent: "#B896FF", haze: "rgba(184,150,255,.12)" },
+  "pitch-aurora": { background: "#071326", surface: "#132A44", line: "#3E9EB8", accent: "#66E4FF", haze: "rgba(102,228,255,.12)" },
+  "pitch-champion": { background: "#101625", surface: "#202A40", line: "#8B7540", accent: "#FFD76A", haze: "rgba(255,215,106,.11)" },
 };
 
 export const badgeGlyph = (itemId: string) => ({

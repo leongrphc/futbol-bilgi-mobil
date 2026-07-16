@@ -1,19 +1,10 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { supabase } from "@/auth/supabase";
 
-const TUTORIAL_KEY = "football-link:tutorial-complete-v1";
-
-export async function isTutorialComplete(): Promise<boolean> {
-  try {
-    return (await AsyncStorage.getItem(TUTORIAL_KEY)) === "1";
-  } catch {
-    return false;
-  }
-}
-
-export async function markTutorialComplete(): Promise<void> {
-  await AsyncStorage.setItem(TUTORIAL_KEY, "1");
-}
-
-export async function resetTutorial(): Promise<void> {
-  await AsyncStorage.removeItem(TUTORIAL_KEY);
+export async function markTutorialComplete(playerId: string): Promise<void> {
+  const { error } = await supabase
+    .from("profiles")
+    .update({ tutorial_completed_at: new Date().toISOString() })
+    .eq("id", playerId)
+    .is("tutorial_completed_at", null);
+  if (error) throw error;
 }

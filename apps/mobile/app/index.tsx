@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
@@ -31,12 +31,31 @@ export default function Login() {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [activeMatch, setActiveMatch] = useState<ActiveMatch | null>(null);
+  const [activeMatchLoaded, setActiveMatchLoaded] = useState(false);
+  const tutorialRedirected = useRef(false);
 
   useFocusEffect(useCallback(() => {
     let alive = true;
-    void getActiveMatch().then(match => { if (alive) setActiveMatch(match); });
+    void getActiveMatch().then(match => { if (alive) { setActiveMatch(match); setActiveMatchLoaded(true); } });
     return () => { alive = false; };
   }, []));
+
+  useEffect(() => {
+    if (authLoading || !session || !profile || !activeMatchLoaded || profile.tutorialCompletedAt || tutorialRedirected.current) return;
+    tutorialRedirected.current = true;
+    const savedTutorial = activeMatch?.playerId === profile.id && activeMatch.mode === "bot" ? activeMatch : null;
+    router.replace({
+      pathname: "/match",
+      params: {
+        playerId: profile.id,
+        matchId: savedTutorial?.matchId ?? `bot-${profile.id}-${Date.now()}`,
+        mode: "bot",
+        tutorial: "1",
+        ...(savedTutorial ? { resume: "1" } : {}),
+        ...(invitedRoom ? { nextRoom: invitedRoom } : {}),
+      },
+    });
+  }, [activeMatch, activeMatchLoaded, authLoading, invitedRoom, profile, session]);
 
   const submitEmail = async () => {
     if (!email.trim() || password.length < 6 || (mode === "sign-up" && !displayName.trim())) return;

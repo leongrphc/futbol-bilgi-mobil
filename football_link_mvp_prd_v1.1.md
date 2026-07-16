@@ -1,5 +1,24 @@
 # Football Link — MVP Product Requirements Document (PRD)
 
+## Onaylı ürün kararı — Üç rekabetçi mod (13 Temmuz 2026)
+
+Bu karar aşağıdaki eski “Hızlı Maç = yazılı dereceli maç” anlatımının yerine geçer:
+
+| Mod | Cevap | Takım seçimi | Cevap süresi | Bitiş | Kupa |
+|---|---|---:|---:|---|---|
+| Quick Match | Sunucunun ürettiği 4 zor şık | 20 sn | 15 sn | İlk 3 / en fazla 9 tur | +20 / −8 Quick kupası |
+| Blitz | Sunucunun ürettiği 4 zor şık | 12 sn | 8 sn | İlk 2 / en fazla 5 tur | +15 / −5 Blitz kupası |
+| Ranked | Yazılı strict exact-match | 25 sn | 20 sn | İlk 3 / en fazla 9 tur | +25 / −15 Ranked kupası |
+
+- Her modun ayrı kupası, matchmaking bandı ve ladder'ı vardır; kupalar birbirine taşınmaz.
+- Ranked, sunucuda doğrulanan 5 tamamlanmış Quick Match sonrasında açılır.
+- Quick ve Blitz'te istemci cevap metni gönderemez. Yalnız sunucunun o round için verdiği tek kullanımlık `choice_id` kabul edilir.
+- Dört şıkta tek doğru ortak oyuncu bulunur. Çeldiriciler öncelikle kulüplerden yalnız birinde oynamış veya aynı lig/kariyer bağlamında makul görünen futbolculardan seçilir.
+- İki oyuncu aynı dört ismi farklı sırada görür; tek seçim hakkına sahiptir. İlk doğru sunucu alımı round'u kazanır, iki yanlış cevapta puan çıkmaz.
+- Friend, Training ve Event modları kupa ladder'larına dokunmaz. Ranked her zaman yazılı cevap kullanır.
+
+Bu bölüm; 3.1, 5, 10, 17 ve 33. bölümlerde aksi yöndeki eski Quick Match/kupa/süre ifadelerine üstün gelir.
+
 **Belge sürümü:** 1.1  
 **Durum:** MVP kapsamı donduruldu  
 **Hedef platformlar:** Android ve iOS  

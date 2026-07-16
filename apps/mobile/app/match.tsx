@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { router, useLocalSearchParams } from "expo-router";
 import { AccessibilityInfo, Alert, Animated, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -16,9 +16,12 @@ import { getChatStyle, type ChatStyleId } from "@/cosmetics/chat-style";
 import { freeEmotesFallback, loadOwnedEmotes, type OwnedEmote } from "@/cosmetics/emotes";
 import { badgeGlyph, defaultLoadout, getCosmeticLoadout, pitchThemes, type CosmeticLoadout } from "@/cosmetics/loadout";
 import { playSfx, preloadSounds, startSuddenDeathBed, stopLobbyMusic, stopSuddenDeathBed } from "@/audio/sounds";
+import { preloadMatchEndAd, showMatchEndAd } from "@/monetization/match-end-ad";
+import { markTutorialComplete } from "@/onboarding/tutorial";
 
 type UiPhase = "WAITING" | "READY" | "SELECTING" | "COUNTDOWN" | "ANSWERING" | "REVEAL" | "FINISHED" | "PAUSED";
 type AnswerFeedback = "correct" | "wrong" | null;
+type AnswerChoice = { id: string; label: string };
 type PlayerCard = { player_id: string; display_name: string; player_code: string; trophies: number; form: string[] };
 type QuickMessageState = {
   eventId: string;
@@ -28,7 +31,7 @@ type QuickMessageState = {
   emoteId?: EmoteId;
   styleId: string;
 };
-type ViewState = { phase: UiPhase; pool: Club[]; searchableClubs: Club[]; deadline: number | null; reveal: Record<string, unknown> | undefined; result: Record<string, unknown> | undefined; round: number; locked: boolean; teams: string[]; selectionCycle: number; scores: Record<string, number>; error: string | undefined; selectionNotice: string | undefined; rematchOfferId: string | undefined; rematchPending: boolean; lastSecond: boolean; answerFeedback: AnswerFeedback; suddenDeath: boolean; suddenDeathPulse: number; playerCards: PlayerCard[]; answerChoices: string[]; choiceMode: boolean; matchMode: string; winningScore: number; quickMessage: QuickMessageState | undefined };
+type ViewState = { phase: UiPhase; pool: Club[]; searchableClubs: Club[]; deadline: number | null; reveal: Record<string, unknown> | undefined; result: Record<string, unknown> | undefined; round: number; locked: boolean; teams: string[]; selectionCycle: number; scores: Record<string, number>; error: string | undefined; selectionNotice: string | undefined; rematchOfferId: string | undefined; rematchPending: boolean; lastSecond: boolean; answerFeedback: AnswerFeedback; suddenDeath: boolean; suddenDeathPulse: number; playerCards: PlayerCard[]; answerChoices: AnswerChoice[]; choiceMode: boolean; matchMode: string; winningScore: number; quickMessage: QuickMessageState | undefined };
 const initial: ViewState = { phase: "WAITING", pool: [], searchableClubs: [], deadline: null, reveal: undefined, result: undefined, round: 0, locked: false, teams: [], selectionCycle: 0, scores: {}, error: undefined, selectionNotice: undefined, rematchOfferId: undefined, rematchPending: false, lastSecond: false, answerFeedback: null, suddenDeath: false, suddenDeathPulse: 0, playerCards: [], answerChoices: [], choiceMode: false, matchMode: "FRIEND", winningScore: 3, quickMessage: undefined };
 const parsePlayerCards = (value: unknown): PlayerCard[] => {
   if (!Array.isArray(value)) return [];
@@ -43,6 +46,15 @@ const parsePlayerCards = (value: unknown): PlayerCard[] => {
       trophies: Number(row.trophies ?? 0),
       form: Array.isArray(row.form) ? row.form.map(String) : [],
     }];
+  });
+};
+const parseAnswerChoices = (value: unknown): AnswerChoice[] => {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item, index) => {
+    if (typeof item === "string" && item.trim()) return [{ id: `legacy-${index}`, label: item }];
+    if (!item || typeof item !== "object") return [];
+    const row = item as Record<string, unknown>;
+    return typeof row.id === "string" && typeof row.label === "string" && row.label.trim() ? [{ id: row.id, label: row.label }] : [];
   });
 };
 const phaseLabels: Record<UiPhase, string> = tr.match.phases;
@@ -112,7 +124,7 @@ function reduceEvents(events: ServerMessage[]): ViewState {
       }
       case "COUNTDOWN_STARTED": return { ...state, phase: "COUNTDOWN", deadline: Number(payload.deadline) };
       case "ANSWER_PHASE_STARTED": {
-        const choices = Array.isArray(payload.choices) ? payload.choices.map(String).filter(Boolean) : [];
+        const choices = parseAnswerChoices(payload.choices);
         return {
           ...state,
           phase: "ANSWERING",
@@ -169,13 +181,14 @@ function reduceEvents(events: ServerMessage[]): ViewState {
 }
 
 export default function Match() {
-  const { playerId = "player", matchId = "dev-room", mode, resume, tutorial } = useLocalSearchParams<{ playerId: string; matchId: string; mode?: string; resume?: string; tutorial?: string }>();
+  const { playerId = "player", matchId = "dev-room", mode, resume, tutorial, nextRoom } = useLocalSearchParams<{ playerId: string; matchId: string; mode?: string; resume?: string; tutorial?: string; nextRoom?: string }>();
   const botMode = mode === "bot";
   const blitzMode = mode === "blitz";
+  const rankedMode = mode === "ranked";
   const eventMode = mode === "event";
   const tutorialMode = botMode && tutorial === "1";
-  const socketMode = botMode ? "bot" as const : blitzMode ? "blitz" as const : eventMode ? "event" as const : mode === "quick" ? "quick" as const : undefined;
-  const rankedKind = blitzMode ? "blitz" as const : mode === "quick" ? "quick" as const : null;
+  const socketMode = botMode ? "bot" as const : blitzMode ? "blitz" as const : rankedMode ? "ranked" as const : eventMode ? "event" as const : mode === "quick" ? "quick" as const : undefined;
+  const rankedKind = blitzMode ? "blitz" as const : rankedMode ? "ranked" as const : mode === "quick" ? "quick" as const : null;
   const { profile, refreshProfile } = useAuth();
   const { connected, error: connectionError, events, send } = useMatchSocket(matchId, playerId, socketMode, resume === "1");
   const state = useMemo(() => reduceEvents(events), [events]);
@@ -196,6 +209,7 @@ export default function Match() {
   const [showSuddenDeath, setShowSuddenDeath] = useState(false);
   const [trophyBefore, setTrophyBefore] = useState<number | null>(null);
   const [trophyAfter, setTrophyAfter] = useState<number | null>(null);
+  const [tutorialCompletion, setTutorialCompletion] = useState<"idle" | "saving" | "complete" | "error">("idle");
   const reducedMotion = useReducedMotion();
   const stageEntrance = useRef(new Animated.Value(1)).current;
   const handledSuddenDeath = useRef(0);
@@ -206,10 +220,11 @@ export default function Match() {
   useEffect(() => {
     void stopLobbyMusic();
     void preloadSounds();
+    if (!botMode) void preloadMatchEndAd();
     return () => {
       void stopSuddenDeathBed();
     };
-  }, []);
+  }, [botMode]);
   useEffect(() => {
     // First transition into club selection = match kickoff.
     if (state.phase !== "SELECTING" || kickoffWhistlePlayed.current) return;
@@ -231,11 +246,27 @@ export default function Match() {
     return () => { alive = false; };
   }, [botMode]);
   useEffect(() => { if (state.phase === "FINISHED") void clearActiveMatch(); }, [state.phase]);
+  const completeTutorial = useCallback(async () => {
+    if (!tutorialMode) return true;
+    setTutorialCompletion("saving");
+    try {
+      await markTutorialComplete(playerId);
+      await refreshProfile();
+      setTutorialCompletion("complete");
+      return true;
+    } catch {
+      setTutorialCompletion("error");
+      return false;
+    }
+  }, [playerId, refreshProfile, tutorialMode]);
+  useEffect(() => {
+    if (state.phase === "FINISHED" && tutorialMode && tutorialCompletion === "idle") void completeTutorial();
+  }, [completeTutorial, state.phase, tutorialCompletion, tutorialMode]);
   useEffect(() => { if (state.phase !== "READY") setReadySent(false); }, [state.phase]);
   useEffect(() => {
     if (!rankedKind || !profile) return;
     if (trophyBefore != null) return;
-    setTrophyBefore(rankedKind === "blitz" ? profile.blitzTrophies : profile.trophies);
+    setTrophyBefore(rankedKind === "blitz" ? profile.blitzTrophies : rankedKind === "ranked" ? profile.rankedTrophies : profile.trophies);
   }, [profile, rankedKind, trophyBefore]);
   useEffect(() => {
     if (state.phase !== "FINISHED" || !rankedKind || finishedHandled.current) return;
@@ -244,8 +275,8 @@ export default function Match() {
       await refreshProfile();
       // small delay so auth context profile is fresh
       await new Promise(resolve => setTimeout(resolve, 150));
-      const { data } = await supabase.from("profiles").select("trophies,blitz_trophies").eq("id", playerId).single();
-      if (data) setTrophyAfter(rankedKind === "blitz" ? data.blitz_trophies : data.trophies);
+      const { data } = await supabase.from("profiles").select("trophies,blitz_trophies,ranked_trophies").eq("id", playerId).single();
+      if (data) setTrophyAfter(rankedKind === "blitz" ? data.blitz_trophies : rankedKind === "ranked" ? data.ranked_trophies : data.trophies);
     })();
   }, [state.phase, rankedKind, refreshProfile, playerId]);
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 200); return () => clearInterval(timer); }, []);
@@ -343,10 +374,10 @@ export default function Match() {
   const chooseClub = (club: Club) => { setSelected(club.id); setClubQuery(club.name); };
   const changeClubQuery = (value: string) => { setClubQuery(value); if (normalizeAnswer(selectedClub?.name ?? "") !== normalizeAnswer(value)) setSelected(undefined); };
   const submit = (value = answer) => { if (value.trim() && !state.locked) send("ANSWER_SUBMIT", { answer: value.trim() }); };
-  const pickChoice = (value: string) => {
+  const pickChoice = (choice: AnswerChoice) => {
     if (state.locked) return;
-    setAnswer(value);
-    submit(value);
+    setAnswer(choice.label);
+    send("ANSWER_SUBMIT", { choice_id: choice.id });
   };
   const confirmSelection = () => {
     if (!selected || state.locked) return;
@@ -384,9 +415,12 @@ export default function Match() {
       ? tr.event.badge
       : blitzMode || state.matchMode === "BLITZ"
         ? tr.blitz.action
+        : rankedMode || state.matchMode === "RANKED"
+          ? tr.ranked.action
         : mode === "quick"
           ? tr.quick.action
           : tr.lobby.friendRoom;
+  const modeTrophyLabel = state.matchMode === "BLITZ" ? tr.common.blitzTrophies : state.matchMode === "RANKED" ? tr.common.rankedTrophies : state.matchMode === "QUICK" ? tr.common.quickTrophies : tr.common.trophies;
   const winTarget = blitzMode || state.matchMode === "BLITZ" ? Math.max(2, state.winningScore) : Math.max(3, state.winningScore);
   const shareResult = async () => {
     const winnerId = state.result?.winner_id;
@@ -401,6 +435,14 @@ export default function Match() {
         rounds: Math.max(1, state.round),
       }),
     });
+  };
+  const returnToMatchCenter = async () => {
+    if (!botMode) await showMatchEndAd();
+    router.replace({ pathname: "/lobby", params: { playerId } });
+  };
+  const finishTutorial = async () => {
+    const completed = tutorialCompletion === "complete" || await completeTutorial();
+    if (completed) router.replace({ pathname: "/lobby", params: nextRoom ? { playerId, room: nextRoom } : { playerId } });
   };
   const rematchStartId = events.filter(event => event.event_type === "REMATCH_STARTED").at(-1)?.payload.match_id;
   useEffect(() => { if (typeof rematchStartId === "string") router.replace({ pathname: "/match", params: { playerId, matchId: rematchStartId } }); }, [playerId, rematchStartId]);
@@ -450,8 +492,9 @@ export default function Match() {
       automaticallyAdjustKeyboardInsets={false}
     >
       <View pointerEvents="none" style={[styles.pitchAtmosphere, { borderColor: pitchTheme.line, backgroundColor: pitchTheme.haze }]}><View style={[styles.atmosphereCircle, { borderColor: pitchTheme.line }]} /><View style={[styles.atmosphereHalf, { backgroundColor: pitchTheme.line }]} /></View>
+      <PremiumPitchEffect itemId={cosmeticLoadout.pitch.itemId} reducedMotion={reducedMotion} />
       <View style={styles.topbar}>
-        <Pressable accessibilityRole="button" accessibilityLabel={tr.match.exit} onPress={exitMatch} hitSlop={12}><Text style={styles.close}>×</Text></Pressable>
+        {!tutorialMode ? <Pressable accessibilityRole="button" accessibilityLabel={tr.match.exit} onPress={exitMatch} hitSlop={12}><Text style={styles.close}>×</Text></Pressable> : <View style={styles.closeSpacer} />}
         <View style={styles.connection}><View style={[styles.dot, { backgroundColor: connected ? colors.primary : colors.danger }]} /><Text style={styles.connectionText}>{connected ? tr.match.live : tr.match.connecting}</Text></View>
         <View style={styles.roundWrap}>{state.suddenDeath && <Text style={styles.sdBadge}>{tr.effects.suddenDeathBadge}</Text>}<Text style={styles.round}>R{Math.max(1, state.round)}</Text></View>
       </View>
@@ -489,8 +532,8 @@ export default function Match() {
         {state.phase === "WAITING" && <Centered title={tr.match.fieldPreparing} copy={botMode ? tr.match.botConnecting : tr.match.playerNeeded} />}
         {state.phase === "READY" && <Centered title={botMode ? tr.match.botReady : tr.match.opponentFound} copy={readySent ? tr.match.readyWaiting : tr.match.readyCopy}>
           {!botMode && (myCard || opponentCard) && <View style={styles.cardRow}>
-            {myCard && <OpponentCardView card={myCard} mine />}
-            {opponentCard && <OpponentCardView card={opponentCard} />}
+            {myCard && <OpponentCardView card={myCard} trophyLabel={modeTrophyLabel} mine />}
+            {opponentCard && <OpponentCardView card={opponentCard} trophyLabel={modeTrophyLabel} />}
           </View>}
           <ActionButton
             label={readySent ? tr.match.readySent : tr.match.readyAction}
@@ -520,16 +563,16 @@ export default function Match() {
         {state.phase === "ANSWERING" && <View style={styles.answerBox}>
           <Text style={styles.stageKicker}>{tr.match.commonPlayer}</Text>
           <Text style={styles.stageTitle}>{tr.match.whoLinks}</Text>
-          {botMode && state.choiceMode && <Text style={styles.choiceHint}>{tr.match.choiceHint}</Text>}
-          {botMode && state.choiceMode ? (
+          {state.choiceMode && <Text style={styles.choiceHint}>{botMode ? tr.match.choiceHint : tr.match.competitiveChoiceHint}</Text>}
+          {state.choiceMode ? (
             <View style={styles.choiceList}>
               {state.answerChoices.map((choice, index) => {
-                const selectedChoice = answer === choice;
+                const selectedChoice = answer === choice.label;
                 const wrong = selectedChoice && state.answerFeedback === "wrong";
                 const correct = selectedChoice && state.answerFeedback === "correct";
-                return <Pressable key={`${choice}-${index}`} accessibilityRole="button" accessibilityState={{ disabled: state.locked, selected: selectedChoice }} disabled={state.locked} onPress={() => pickChoice(choice)} style={({ pressed }) => [styles.choiceButton, selectedChoice && styles.choiceSelected, wrong && styles.choiceWrong, correct && styles.choiceCorrect, pressed && !state.locked && styles.pressed]}>
+                return <Pressable key={choice.id} accessibilityRole="button" accessibilityState={{ disabled: state.locked, selected: selectedChoice }} disabled={state.locked} onPress={() => pickChoice(choice)} style={({ pressed }) => [styles.choiceButton, selectedChoice && styles.choiceSelected, wrong && styles.choiceWrong, correct && styles.choiceCorrect, pressed && !state.locked && styles.pressed]}>
                   <Text style={[styles.choiceIndex, (selectedChoice || correct) && styles.choiceIndexOn]}>{String.fromCharCode(65 + index)}</Text>
-                  <Text style={[styles.choiceText, (selectedChoice || correct) && styles.choiceTextOn]}>{choice}</Text>
+                  <Text style={[styles.choiceText, (selectedChoice || correct) && styles.choiceTextOn]}>{choice.label}</Text>
                 </Pressable>;
               })}
             </View>
@@ -546,12 +589,14 @@ export default function Match() {
         {state.phase === "PAUSED" && <Centered title={tr.match.paused} copy={tr.match.pausedCopy} />}
         {state.phase === "REVEAL" && <ResultPanel title={tr.match.roundDone} value={state.reveal} playerId={playerId} reducedMotion={reducedMotion} momentumSeconds={seconds} suddenDeath={state.suddenDeath}>{!botMode && <ReportButton disabled={reporting || reported} onPress={openReport} />}</ResultPanel>}
         {state.phase === "FINISHED" && <ResultPanel title={tr.match.matchDone} value={state.result} playerId={playerId} reducedMotion={reducedMotion} suddenDeath={state.suddenDeath}>
-          <ShareCardPreview myScore={playerScore} oppScore={opponentScore} modeLabel={modeLabel} winnerId={typeof state.result?.winner_id === "string" ? state.result.winner_id : null} playerId={playerId} suddenDeath={state.suddenDeath} />
-          <TrophyDelta before={trophyBefore} after={trophyAfter} kind={rankedKind ?? (state.matchMode === "BLITZ" ? "blitz" : state.matchMode === "QUICK" ? "quick" : null)} />
-          <ShareButton onPress={() => { void shareResult(); }} />
+          {!tutorialMode && <><ShareCardPreview myScore={playerScore} oppScore={opponentScore} modeLabel={modeLabel} winnerId={typeof state.result?.winner_id === "string" ? state.result.winner_id : null} playerId={playerId} suddenDeath={state.suddenDeath} /><TrophyDelta before={trophyBefore} after={trophyAfter} kind={rankedKind ?? (state.matchMode === "BLITZ" ? "blitz" : state.matchMode === "RANKED" ? "ranked" : state.matchMode === "QUICK" ? "quick" : null)} /><ShareButton onPress={() => { void shareResult(); }} /></>}
           {!botMode && !blitzMode && !eventMode && <>{state.rematchOfferId || polledRematchOffer ? <RematchOffer onAccept={() => send("REMATCH_ACCEPT")} onDecline={() => send("REMATCH_DECLINE")} /> : <><ReportButton disabled={reporting || reported} onPress={openReport} /><RematchButton disabled={state.rematchPending} onPress={requestRematch} /></>}</>}
           {!botMode && (blitzMode || eventMode) && <ReportButton disabled={reporting || reported} onPress={openReport} />}
-          <ActionButton label={botMode ? tr.match.newBotMatch : tr.match.returnCenter} onPress={() => botMode ? router.replace({ pathname: "/match", params: { playerId, matchId: `bot-${playerId}-${Date.now()}`, mode: "bot" } }) : router.replace({ pathname: "/lobby", params: { playerId } })} />
+          <ActionButton
+            label={tutorialMode ? (tutorialCompletion === "saving" ? tr.tutorial.saving : tutorialCompletion === "error" ? tr.tutorial.retry : tr.tutorial.finish) : botMode ? tr.match.newBotMatch : tr.match.returnCenter}
+            disabled={tutorialMode && tutorialCompletion === "saving"}
+            onPress={() => tutorialMode ? void finishTutorial() : botMode ? router.replace({ pathname: "/match", params: { playerId, matchId: `bot-${playerId}-${Date.now()}`, mode: "bot" } }) : void returnToMatchCenter()}
+          />
         </ResultPanel>}
       </Animated.View>
     </ScrollView>
@@ -579,10 +624,10 @@ function ActionButton({ label, onPress, disabled = false, confirmed = false }: {
     </Pressable>
   );
 }
-function TrophyDelta({ before, after, kind }: { before: number | null; after: number | null; kind: "quick" | "blitz" | null }) {
+function TrophyDelta({ before, after, kind }: { before: number | null; after: number | null; kind: "quick" | "blitz" | "ranked" | null }) {
   if (!kind || before == null || after == null) return null;
   const delta = after - before;
-  const label = kind === "blitz" ? tr.common.blitzTrophies : tr.common.trophies;
+  const label = kind === "blitz" ? tr.common.blitzTrophies : kind === "ranked" ? tr.common.rankedTrophies : tr.common.quickTrophies;
   const tone = delta > 0 ? colors.primary : delta < 0 ? colors.danger : colors.muted;
   const chip = delta > 0 ? tr.ranked.deltaWin(delta) : delta < 0 ? tr.ranked.deltaLoss(Math.abs(delta)) : tr.ranked.noChange;
   return <View style={styles.trophyDelta}>
@@ -590,12 +635,12 @@ function TrophyDelta({ before, after, kind }: { before: number | null; after: nu
     <Text style={[styles.trophyDeltaChip, { color: tone, borderColor: tone }]}>{chip}</Text>
   </View>;
 }
-function OpponentCardView({ card, mine = false }: { card: PlayerCard; mine?: boolean }) {
+function OpponentCardView({ card, trophyLabel, mine = false }: { card: PlayerCard; trophyLabel: string; mine?: boolean }) {
   return <View style={[styles.oppCard, mine && styles.oppCardMine]}>
     <Text style={styles.oppLabel}>{mine ? tr.match.you : tr.match.opponent}</Text>
     <Text numberOfLines={1} style={styles.oppName}>{card.display_name}</Text>
     <Text style={styles.oppCode}>#{card.player_code}</Text>
-    <Text style={styles.oppTrophies}>{card.trophies} {tr.common.trophies}</Text>
+    <Text style={styles.oppTrophies}>{card.trophies} {trophyLabel}</Text>
     {!!card.form.length && <Text style={styles.oppForm}>{card.form.join(" ")}</Text>}
   </View>;
 }
@@ -604,7 +649,39 @@ function ReportButton({ onPress, disabled }: { onPress: () => void; disabled: bo
 function RematchButton({ onPress, disabled }: { onPress: () => void; disabled: boolean }) { return <Pressable accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.rematchAction, disabled && styles.disabled, pressed && styles.pressed]}><Text style={styles.rematchActionText}>{disabled ? tr.rematch.pending : tr.rematch.action}</Text><Text style={styles.rematchArrow}>↻</Text></Pressable>; }
 function RematchOffer({ onAccept, onDecline }: { onAccept: () => void; onDecline: () => void }) { return <View accessibilityRole="alert" style={styles.rematchOffer}><Text style={styles.rematchOfferTitle}>{tr.rematch.offerTitle}</Text><Text style={styles.rematchOfferCopy}>{tr.rematch.offerCopy}</Text><View style={styles.rematchOfferActions}><Pressable accessibilityRole="button" onPress={onDecline} style={({ pressed }) => [styles.rematchDecline, pressed && styles.pressed]}><Text style={styles.rematchDeclineText}>{tr.rematch.decline}</Text></Pressable><Pressable accessibilityRole="button" onPress={onAccept} style={({ pressed }) => [styles.rematchAccept, pressed && styles.pressed]}><Text style={styles.rematchAcceptText}>{tr.rematch.accept}</Text></Pressable></View></View>; }
 function ConfettiBurst({ burstKey, reducedMotion }: { burstKey?: string; reducedMotion: boolean }) { const progress = useRef(new Animated.Value(0)).current; useEffect(() => { if (!burstKey || reducedMotion) return; progress.setValue(0); const animation = Animated.timing(progress, { toValue: 1, duration: 900, useNativeDriver: true }); animation.start(); return () => animation.stop(); }, [burstKey, progress, reducedMotion]); if (!burstKey || reducedMotion) return null; const palette = [colors.primary, colors.accent, "#72C7FF", "#FF8A5C"]; return <View pointerEvents="none" style={styles.confetti}>{Array.from({ length: 12 }, (_, index) => { const angle = (index / 12) * Math.PI * 2; const distance = 58 + (index % 3) * 14; return <Animated.View key={`${burstKey}-${index}`} style={[styles.confettiPiece, { backgroundColor: palette[index % palette.length], opacity: progress.interpolate({ inputRange: [0, .15, .8, 1], outputRange: [0, 1, 1, 0] }), transform: [{ translateX: progress.interpolate({ inputRange: [0, 1], outputRange: [0, Math.cos(angle) * distance] }) }, { translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [0, Math.sin(angle) * distance] }) }, { rotate: progress.interpolate({ inputRange: [0, 1], outputRange: ["0deg", `${180 + index * 30}deg`] }) }] }]} />; })}</View>; }
-const chatThemes: Record<string, { backgroundColor: string; borderColor: string; text: string; label: string }> = { "chat-floodlight": { backgroundColor: "#EAF6FF", borderColor: "#72C7FF", text: "#07151F", label: "#246B8B" }, "chat-derby": { backgroundColor: "#5A211C", borderColor: "#FF8A5C", text: "#FFFFFF", label: "#FFB49B" }, "chat-neon": { backgroundColor: "#2D1E48", borderColor: "#B896FF", text: "#FFFFFF", label: "#77E6FF" } };
+function PremiumPitchEffect({ itemId, reducedMotion }: { itemId: string; reducedMotion: boolean }) {
+  const progress = useRef(new Animated.Value(.35)).current;
+  const effect = itemId === "pitch-aurora"
+    ? { kind: "AURORA" as const, colors: ["#66E4FF", "#B996FF", "#55F0C7"] }
+    : itemId === "pitch-champion"
+      ? { kind: "CHAMPION" as const, colors: ["#FFD76A", "#FFF2B7", "#FF9B54"] }
+      : null;
+  useEffect(() => {
+    progress.stopAnimation();
+    if (!effect || reducedMotion) { progress.setValue(.35); return; }
+    progress.setValue(0);
+    const animation = Animated.loop(Animated.timing(progress, { toValue: 1, duration: effect.kind === "AURORA" ? 6_500 : 4_800, useNativeDriver: true }));
+    animation.start();
+    return () => animation.stop();
+  }, [effect?.kind, progress, reducedMotion]);
+  if (!effect) return null;
+  return <View pointerEvents="none" style={styles.premiumPitchEffect}>
+    {effect.kind === "AURORA" && [0, 1].map(index => <Animated.View key={`beam-${index}`} style={[styles.premiumBeam, { backgroundColor: effect.colors[index], opacity: progress.interpolate({ inputRange: [0, .5, 1], outputRange: [index ? .04 : .11, index ? .12 : .04, index ? .04 : .11] }), transform: [{ translateX: progress.interpolate({ inputRange: [0, 1], outputRange: [index ? 90 : -180, index ? -150 : 120] }) }, { rotate: index ? "-18deg" : "14deg" }] }]} />)}
+    {Array.from({ length: 8 }, (_, index) => <Animated.View key={`mote-${index}`} style={[styles.premiumMote, { left: `${8 + (index * 13) % 84}%`, top: `${12 + (index * 19) % 76}%`, width: effect.kind === "CHAMPION" ? 4 : 3, height: effect.kind === "CHAMPION" ? 4 : 3, backgroundColor: effect.colors[index % effect.colors.length], opacity: progress.interpolate({ inputRange: [0, .25, .75, 1], outputRange: [.08, .72, .38, .08] }), transform: [{ translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [22 + index * 3, -52 - index * 4] }) }, { scale: progress.interpolate({ inputRange: [0, .5, 1], outputRange: [.7, 1.5, .8] }) }] }]} />)}
+    {effect.kind === "CHAMPION" && <Animated.Text style={[styles.championStar, { opacity: progress.interpolate({ inputRange: [0, .5, 1], outputRange: [.18, .7, .18] }), transform: [{ scale: progress.interpolate({ inputRange: [0, .5, 1], outputRange: [.8, 1.18, .8] }) }, { rotate: progress.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "25deg"] }) }] }]}>✦</Animated.Text>}
+  </View>;
+}
+type ChatTheme = { backgroundColor: string; borderColor: string; text: string; label: string; glow?: string; motion?: "AURORA" | "CHAMPION" };
+const chatThemes: Record<string, ChatTheme> = {
+  "chat-floodlight": { backgroundColor: "#EAF6FF", borderColor: "#72C7FF", text: "#07151F", label: "#246B8B" },
+  "chat-derby": { backgroundColor: "#5A211C", borderColor: "#FF8A5C", text: "#FFFFFF", label: "#FFB49B" },
+  "chat-neon": { backgroundColor: "#2D1E48", borderColor: "#B896FF", text: "#FFFFFF", label: "#77E6FF", glow: "#B896FF", motion: "AURORA" },
+  "chat-aurora": { backgroundColor: "#132B48", borderColor: "#66E4FF", text: "#F4FDFF", label: "#A7F2FF", glow: "#66E4FF", motion: "AURORA" },
+  "chat-champion": { backgroundColor: "#2A2518", borderColor: "#FFD76A", text: "#FFF9E8", label: "#FFD76A", glow: "#FFD76A", motion: "CHAMPION" },
+};
+const premiumEmoteEffects: Partial<Record<EmoteId, string>> = {
+  "emote-comet": "#66E4FF", "emote-star": "#B996FF", "emote-rocket": "#FF8A5C", "emote-shield": "#FFD76A",
+};
 function ChatBubble({ message, playerId, reducedMotion }: { message: ViewState["quickMessage"]; playerId: string; reducedMotion: boolean }) {
   const progress = useRef(new Animated.Value(0)).current;
   const eventId = message?.eventId;
@@ -626,6 +703,13 @@ function ChatBubble({ message, playerId, reducedMotion }: { message: ViewState["
       ? tr.quickMessages[message.messageId]
       : "";
   const emojiMode = message.kind === "EMOJI";
+  const emoteEffect = message.emoteId ? premiumEmoteEffects[message.emoteId] : undefined;
+  const entranceX = theme?.motion
+    ? progress.interpolate({ inputRange: [0, .16, 1], outputRange: [fromYou ? 18 : -18, 0, 0] })
+    : 0;
+  const entranceRotate = theme?.motion === "CHAMPION"
+    ? progress.interpolate({ inputRange: [0, .16, 1], outputRange: [fromYou ? "3deg" : "-3deg", "0deg", "0deg"] })
+    : "0deg";
   return (
     <Animated.View
       pointerEvents="none"
@@ -633,17 +717,21 @@ function ChatBubble({ message, playerId, reducedMotion }: { message: ViewState["
       style={[
         styles.chatBubble,
         fromYou ? styles.chatBubbleYou : styles.chatBubbleOpponent,
-        theme && { backgroundColor: theme.backgroundColor, borderColor: theme.borderColor },
+        theme && { backgroundColor: theme.backgroundColor, borderColor: theme.borderColor, shadowColor: theme.glow ?? "#000", shadowOpacity: theme.glow ? .62 : .28 },
         emojiMode && styles.chatBubbleEmoji,
         {
           opacity: progress.interpolate({ inputRange: [0, .12, .78, 1], outputRange: [0, 1, 1, 0] }),
           transform: [
             { translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [8, -76] }) },
+            { translateX: entranceX },
             { scale: progress.interpolate({ inputRange: [0, .15, 1], outputRange: [.88, 1, 1.04] }) },
+            { rotate: entranceRotate },
           ],
         },
       ]}
     >
+      {theme?.motion && <Animated.View style={[styles.bubbleGlint, { backgroundColor: theme.glow, opacity: progress.interpolate({ inputRange: [0, .12, .45, 1], outputRange: [0, .7, .18, 0] }), transform: [{ translateX: progress.interpolate({ inputRange: [0, 1], outputRange: [-24, 120] }) }, { rotate: "18deg" }] }]} />}
+      {emojiMode && emoteEffect && <><Animated.View style={[styles.emoteAura, { borderColor: emoteEffect, opacity: progress.interpolate({ inputRange: [0, .12, .65, 1], outputRange: [0, .9, .35, 0] }), transform: [{ scale: progress.interpolate({ inputRange: [0, .2, 1], outputRange: [.55, 1.2, 1.6] }) }] }]} /><Text style={[styles.emoteAuraSpark, { color: emoteEffect }]}>✦</Text></>}
       <Text style={[styles.chatBubbleSender, fromYou ? styles.chatBubbleSenderYou : styles.chatBubbleSenderOpponent, theme && { color: theme.label, opacity: 1 }]}>
         {fromYou ? tr.match.you : tr.match.opponent}
       </Text>
@@ -857,11 +945,12 @@ const styles = StyleSheet.create({
   wrongBanner: { backgroundColor: "rgba(232,93,93,.16)", borderWidth: 1, borderColor: colors.danger, borderRadius: 10, padding: 10, alignItems: "center" }, wrongBannerText: { color: colors.danger, fontSize: 10, fontWeight: "900", letterSpacing: 1.2 },
   correctBanner: { backgroundColor: "rgba(61,184,122,.14)", borderWidth: 1, borderColor: colors.primary, borderRadius: 10, padding: 10, alignItems: "center" }, correctBannerText: { color: colors.primary, fontSize: 10, fontWeight: "900", letterSpacing: 1.2 },
   safe: { flex: 1, backgroundColor: colors.background }, keyboard: { flex: 1 }, page: { padding: 18, gap: 14, paddingBottom: 40, overflow: "hidden", flexGrow: 1 }, answerFieldWrap: { marginBottom: 10 }, pitchAtmosphere: { position: "absolute", width: 330, height: 330, borderRadius: 165, borderWidth: 1, right: -190, top: 190, opacity: .55, alignItems: "center", justifyContent: "center" }, atmosphereCircle: { width: 112, height: 112, borderRadius: 56, borderWidth: 1 }, atmosphereHalf: { position: "absolute", width: 1, height: 330 },
-  topbar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, close: { color: colors.text, fontSize: 31, fontWeight: "300" }, connection: { flexDirection: "row", alignItems: "center", gap: 7 }, dot: { width: 7, height: 7, borderRadius: 4 }, connectionText: { color: colors.muted, fontSize: 10, fontWeight: "900", letterSpacing: 1.3 }, roundWrap: { flexDirection: "row", alignItems: "center", gap: 6 }, sdBadge: { color: colors.ink, backgroundColor: colors.signal, overflow: "hidden", borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, fontSize: 9, fontWeight: "900" }, round: { color: colors.accent, fontSize: 12, fontWeight: "900" },
+  topbar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, close: { color: colors.text, fontSize: 31, fontWeight: "300" }, closeSpacer: { width: 18, height: 37 }, connection: { flexDirection: "row", alignItems: "center", gap: 7 }, dot: { width: 7, height: 7, borderRadius: 4 }, connectionText: { color: colors.muted, fontSize: 10, fontWeight: "900", letterSpacing: 1.3 }, roundWrap: { flexDirection: "row", alignItems: "center", gap: 6 }, sdBadge: { color: colors.ink, backgroundColor: colors.signal, overflow: "hidden", borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, fontSize: 9, fontWeight: "900" }, round: { color: colors.accent, fontSize: 12, fontWeight: "900" },
   sdStrip: { backgroundColor: "rgba(255,107,61,.14)", borderWidth: 1, borderColor: colors.signal, borderRadius: 12, paddingHorizontal: 13, paddingVertical: 10, gap: 3 }, sdStripText: { color: colors.signal, fontSize: 11, fontWeight: "900", letterSpacing: 1.2 }, sdStripCopy: { color: colors.muted, fontSize: 12, fontWeight: "700" },
   sdOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(7,18,28,.88)", alignItems: "center", justifyContent: "center", zIndex: 40, padding: 24 }, sdCard: { width: "100%", maxWidth: 340, borderRadius: 22, borderWidth: 1, borderColor: colors.signal, backgroundColor: "#1A0F12", paddingVertical: 28, paddingHorizontal: 22, alignItems: "center", gap: 8 }, sdKicker: { color: colors.signal, fontSize: 10, fontWeight: "900", letterSpacing: 2 }, sdTitle: { color: colors.text, fontSize: 34, fontWeight: "900", letterSpacing: -0.8, textAlign: "center" }, sdCopy: { color: colors.muted, fontSize: 14, lineHeight: 20, textAlign: "center", maxWidth: 260 },
   shareCard: { borderRadius: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background, padding: 16, gap: 4, alignItems: "center" }, shareCardKicker: { color: colors.primary, fontSize: 10, fontWeight: "900", letterSpacing: 1.6 }, shareCardScore: { color: colors.text, fontSize: 36, fontWeight: "900", letterSpacing: -1 }, shareCardOutcome: { color: colors.accent, fontSize: 15, fontWeight: "900" }, shareCardMeta: { color: colors.muted, fontSize: 12, fontWeight: "700" },
-  scoreboardWrap: { position: "relative", zIndex: 1 }, scoreboard: { minHeight: 134, backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, flexDirection: "row", alignItems: "stretch", overflow: "hidden" }, side: { flex: 1, padding: 14, justifyContent: "space-between" }, sideRight: { alignItems: "flex-end" }, playerIdentity: { flexDirection: "row", alignItems: "center", gap: 7 }, sideName: { color: colors.muted, fontSize: 10, fontWeight: "900", letterSpacing: 1 }, playerBadge: { width: 25, height: 25, borderRadius: 7, borderWidth: 1.5, alignItems: "center", justifyContent: "center", transform: [{ rotate: "45deg" }] }, playerBadgeText: { fontSize: 7, fontWeight: "900", transform: [{ rotate: "-45deg" }] }, score: { color: colors.text, fontSize: 42, lineHeight: 45, fontWeight: "900", letterSpacing: -1 }, rightScore: { alignItems: "flex-end" }, scorePips: { flexDirection: "row", gap: 4, marginTop: 5 }, scorePipsRight: { justifyContent: "flex-end" }, scorePip: { width: 15, height: 3, borderRadius: 2, backgroundColor: colors.border }, scorePipOn: { backgroundColor: colors.primary }, chatBubble: { position: "absolute", top: 28, maxWidth: "72%", borderRadius: 18, paddingHorizontal: 13, paddingVertical: 9, borderWidth: 1, shadowColor: "#000", shadowOpacity: .28, shadowRadius: 8, elevation: 7 }, chatBubbleEmoji: { minWidth: 64, alignItems: "center" }, chatBubbleYou: { right: 12, backgroundColor: colors.primary, borderColor: "rgba(245,241,232,.4)" }, chatBubbleOpponent: { left: 12, backgroundColor: "#244554", borderColor: colors.accent, borderWidth: 1.5 }, chatBubbleSender: { fontSize: 8, fontWeight: "900", letterSpacing: 1 }, chatBubbleSenderYou: { color: colors.background, opacity: .7 }, chatBubbleSenderOpponent: { color: colors.accent }, chatBubbleText: { fontSize: 14, fontWeight: "900", marginTop: 2 }, chatBubbleEmojiText: { fontSize: 28, lineHeight: 34, marginTop: 2 }, chatBubbleTextYou: { color: colors.background }, chatBubbleTextOpponent: { color: "#FFFFFF" },
+  premiumPitchEffect: { ...StyleSheet.absoluteFillObject, overflow: "hidden" }, premiumBeam: { position: "absolute", top: 90, width: 250, height: 72, borderRadius: 60 }, premiumMote: { position: "absolute", borderRadius: 99, shadowOpacity: .8, shadowRadius: 5 }, championStar: { position: "absolute", right: 30, top: 76, color: "#FFD76A", fontSize: 46, textShadowColor: "rgba(255,215,106,.55)", textShadowRadius: 12 },
+  scoreboardWrap: { position: "relative", zIndex: 1 }, scoreboard: { minHeight: 134, backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, flexDirection: "row", alignItems: "stretch", overflow: "hidden" }, side: { flex: 1, padding: 14, justifyContent: "space-between" }, sideRight: { alignItems: "flex-end" }, playerIdentity: { flexDirection: "row", alignItems: "center", gap: 7 }, sideName: { color: colors.muted, fontSize: 10, fontWeight: "900", letterSpacing: 1 }, playerBadge: { width: 25, height: 25, borderRadius: 7, borderWidth: 1.5, alignItems: "center", justifyContent: "center", transform: [{ rotate: "45deg" }] }, playerBadgeText: { fontSize: 7, fontWeight: "900", transform: [{ rotate: "-45deg" }] }, score: { color: colors.text, fontSize: 42, lineHeight: 45, fontWeight: "900", letterSpacing: -1 }, rightScore: { alignItems: "flex-end" }, scorePips: { flexDirection: "row", gap: 4, marginTop: 5 }, scorePipsRight: { justifyContent: "flex-end" }, scorePip: { width: 15, height: 3, borderRadius: 2, backgroundColor: colors.border }, scorePipOn: { backgroundColor: colors.primary }, chatBubble: { position: "absolute", top: 28, maxWidth: "72%", borderRadius: 18, paddingHorizontal: 13, paddingVertical: 9, borderWidth: 1, shadowColor: "#000", shadowOpacity: .28, shadowRadius: 8, elevation: 7, overflow: "hidden" }, chatBubbleEmoji: { minWidth: 64, alignItems: "center", overflow: "visible" }, chatBubbleYou: { right: 12, backgroundColor: colors.primary, borderColor: "rgba(245,241,232,.4)" }, chatBubbleOpponent: { left: 12, backgroundColor: "#244554", borderColor: colors.accent, borderWidth: 1.5 }, bubbleGlint: { position: "absolute", top: -20, bottom: -20, width: 14 }, emoteAura: { position: "absolute", width: 54, height: 54, borderRadius: 27, borderWidth: 2, top: 2 }, emoteAuraSpark: { position: "absolute", right: 5, top: 2, fontSize: 12, fontWeight: "900" }, chatBubbleSender: { fontSize: 8, fontWeight: "900", letterSpacing: 1 }, chatBubbleSenderYou: { color: colors.background, opacity: .7 }, chatBubbleSenderOpponent: { color: colors.accent }, chatBubbleText: { fontSize: 14, fontWeight: "900", marginTop: 2 }, chatBubbleEmojiText: { fontSize: 28, lineHeight: 34, marginTop: 2 }, chatBubbleTextYou: { color: colors.background }, chatBubbleTextOpponent: { color: "#FFFFFF" },
   matchMeta: { width: 112, alignItems: "center", justifyContent: "space-between", paddingVertical: 15 }, phase: { color: colors.primary, fontSize: 9, fontWeight: "900", letterSpacing: 0.8, textAlign: "center" }, midfield: { width: 1, flex: 1, backgroundColor: colors.pitchLine, marginVertical: 8, justifyContent: "center" }, centerCircle: { width: 15, height: 15, borderRadius: 8, borderWidth: 1, borderColor: colors.primary, position: "absolute", left: -7, backgroundColor: colors.surface }, timer: { color: colors.accent, fontSize: 18, fontWeight: "900" }, timerUnit: { fontSize: 9, color: colors.muted },
   testStrip: { backgroundColor: colors.accent, borderRadius: 10, paddingHorizontal: 13, paddingVertical: 10, flexDirection: "row", alignItems: "center", gap: 10 }, testStripText: { color: colors.background, fontSize: 9, fontWeight: "900", letterSpacing: 1 }, testStripCopy: { color: colors.background, opacity: 0.75, fontSize: 11, flex: 1 }, eventStrip: { backgroundColor: "rgba(244,201,93,.14)", borderRadius: 10, borderWidth: 1, borderColor: "#F4C95D", paddingHorizontal: 13, paddingVertical: 10, flexDirection: "row", alignItems: "center", gap: 10 }, eventStripText: { color: "#F4C95D", fontSize: 9, fontWeight: "900", letterSpacing: 1 }, eventStripCopy: { color: colors.muted, fontSize: 11, flex: 1, fontWeight: "700" }, tipStrip: { backgroundColor: "rgba(114,199,255,.12)", borderRadius: 10, borderWidth: 1, borderColor: "rgba(114,199,255,.35)", paddingHorizontal: 12, paddingVertical: 10 }, tipText: { color: colors.floodlight, fontSize: 12, fontWeight: "700", lineHeight: 17 }, error: { backgroundColor: "#3A2025", borderRadius: 10, padding: 12 }, errorText: { color: colors.danger, fontWeight: "700", fontSize: 13 }, quickMessages: { gap: 8 }, reactBar: { flexDirection: "row", alignItems: "center", gap: 8 }, emoteToggle: { minHeight: 36, borderRadius: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, paddingHorizontal: 10, flexDirection: "row", alignItems: "center", gap: 5 }, emoteToggleOpen: { borderColor: colors.accent, backgroundColor: "rgba(244,201,93,.12)" }, emoteToggleGlyph: { fontSize: 15 }, emoteToggleText: { color: colors.text, fontSize: 11, fontWeight: "900" }, emoteTray: { borderRadius: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, padding: 12, gap: 10 }, emoteTrayTitle: { color: colors.muted, fontSize: 10, fontWeight: "900", letterSpacing: 1.1 }, emoteGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 }, emoteCell: { width: 48, height: 48, borderRadius: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background, alignItems: "center", justifyContent: "center" }, emoteCellPremium: { borderColor: "#6B4DFF" }, emoteGlyph: { fontSize: 24 }, quickMessageNotice: { color: colors.accent, fontSize: 12, fontWeight: "800" }, quickMessageButtons: { flex: 1, flexDirection: "row", flexWrap: "wrap", gap: 6 }, quickMessageButton: { borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, paddingHorizontal: 9, paddingVertical: 7, borderRadius: 14 }, quickMessageText: { color: colors.text, fontSize: 11, fontWeight: "800" },
   stage: { minHeight: 360, justifyContent: "center" }, answeringStage: { minHeight: 236, justifyContent: "flex-start", paddingTop: 10 }, centered: { alignItems: "center", gap: 12, paddingHorizontal: 14 }, stageKicker: { color: colors.primary, fontSize: 10, fontWeight: "900", letterSpacing: 1.4 }, stageTitle: { color: colors.text, fontSize: 30, lineHeight: 34, fontWeight: "900", letterSpacing: -0.8 }, stageCopy: { color: colors.muted, fontSize: 15, lineHeight: 22, textAlign: "center", maxWidth: 320 },

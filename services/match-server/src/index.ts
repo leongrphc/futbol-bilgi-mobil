@@ -4,28 +4,32 @@ import { MatchEngine, pairKey, type SerializedEngineState } from "@football-link
 import { ALL_EMOTE_IDS, FREE_EMOTE_IDS, PROTOCOL_VERSION, type ClientMessage, type EmoteId, type MatchPhase, type QuickMessageId, type ServerEventType, type ServerMessage } from "@football-link/shared";
 import { applyMatchModeRules, createMatchData, loadLiveEventScope, type EventScope, type MatchData } from "./data";
 import { createMatchTicket, verifyMatchTicket, verifySupabaseAccessToken, type MatchTicketMode } from "./auth";
+import { resolveAnswerPayload, type AnswerChoice } from "./choices";
 
 interface Env { MATCH_ROOM: DurableObjectNamespace<MatchRoom>; MATCH_QUEUE: DurableObjectNamespace<MatchQueue>; SUPABASE_URL: string; SUPABASE_SERVICE_ROLE_KEY: string; MATCH_TOKEN_SECRET: string }
 type Pause = { phase: MatchPhase; remainingMs: number; disconnectedPlayer: string; deadline: number };
-type StoredRoom = { matchId: string; engine: SerializedEngineState; pause: Pause | null; dataVersionId: string; persistedRounds?: number; rematch?: { requester: string; matchId: string } | null; leagueFilter?: string | null; event?: EventScope | null };
+type CompetitiveMatchMode = "QUICK" | "BLITZ" | "RANKED";
+type RoomMatchMode = CompetitiveMatchMode | "FRIEND" | "EVENT" | "BOT";
+type StoredRoom = { matchId: string; engine: SerializedEngineState; pause: Pause | null; dataVersionId: string; persistedRounds?: number; rematch?: { requester: string; matchId: string } | null; leagueFilter?: string | null; event?: EventScope | null; matchMode?: RoomMatchMode; answerChoices?: AnswerChoice[] };
 const BOT_PLAYER_ID = "test-bot";
 const quickMessageIds = new Set<QuickMessageId>(["GOOD_LUCK", "NICE_ONE", "SO_CLOSE", "READY", "REMATCH"]);
 const freeEmoteIds = new Set<string>(FREE_EMOTE_IDS);
 const allEmoteIds = new Set<string>(ALL_EMOTE_IDS);
-const chatStyleIds = new Set(["chat-classic", "chat-floodlight", "chat-derby", "chat-neon"]);
+const chatStyleIds = new Set(["chat-classic", "chat-floodlight", "chat-derby", "chat-neon", "chat-aurora", "chat-champion"]);
 const EMOTE_COOLDOWN_MS = 1_500;
 
 type RegionClass = "TR" | "EU" | "OTHER";
-type QueueKind = "quick" | "blitz" | "event";
+type QueueKind = "quick" | "blitz" | "ranked" | "event";
 type QueueEntry = { playerId: string; enqueuedAt: number; trophies: number; region: RegionClass };
 const QUEUE_TTL_MS = 120_000;
 const ABANDON_COOLDOWN_MS = 45_000;
 const cupBand = (waitMs: number) => waitMs < 15_000 ? 50 : waitMs < 45_000 ? 100 : Number.POSITIVE_INFINITY;
 const withinBand = (a: number, b: number, band: number) => Math.abs(a - b) <= band;
 const normalizeRegion = (value: unknown): RegionClass => value === "TR" || value === "EU" ? value : "OTHER";
-const normalizeQueueKind = (value: unknown): QueueKind => value === "blitz" ? "blitz" : value === "event" ? "event" : "quick";
+const normalizeQueueKind = (value: unknown): QueueKind => value === "blitz" ? "blitz" : value === "ranked" ? "ranked" : value === "event" ? "event" : "quick";
 const queueStorageKeys = (kind: QueueKind) => {
   if (kind === "blitz") return { queueKey: "queue_blitz", assignKey: "assignments_blitz", coolKey: "cooldowns_blitz" };
+  if (kind === "ranked") return { queueKey: "queue_ranked", assignKey: "assignments_ranked", coolKey: "cooldowns_ranked" };
   if (kind === "event") return { queueKey: "queue_event", assignKey: "assignments_event", coolKey: "cooldowns_event" };
   return { queueKey: "queue", assignKey: "assignments", coolKey: "cooldowns" };
 };
@@ -122,6 +126,8 @@ export class MatchRoom extends DurableObject<Env> {
   private chatStyles = new Map<string, string>();
   private lastEmoteAt = new Map<string, number>();
   private eventScope: EventScope | null = null;
+  private matchMode: RoomMatchMode = "FRIEND";
+  private answerChoices: AnswerChoice[] = [];
 
   async fetch(request: Request): Promise<Response> {
     await this.ensureLoaded();
@@ -137,6 +143,7 @@ export class MatchRoom extends DurableObject<Env> {
     const wantsBot = ticket.mode === "bot";
     const quickMatch = ticket.mode === "quick";
     const blitzMatch = ticket.mode === "blitz";
+    const rankedMatch = ticket.mode === "ranked";
     const eventMatch = ticket.mode === "event";
     const current = [...this.sockets].find(([, id]) => id === player);
     if (current) { current[0].close(1000, "replaced"); this.sockets.delete(current[0]); }
@@ -158,20 +165,22 @@ export class MatchRoom extends DurableObject<Env> {
         event,
       });
       if (blitzMatch) this.data.rules = applyMatchModeRules(this.data.rules, "blitz");
+      if (rankedMatch) this.data.rules = applyMatchModeRules(this.data.rules, "ranked");
+      this.matchMode = eventMatch ? "EVENT" : blitzMatch ? "BLITZ" : rankedMatch ? "RANKED" : quickMatch ? "QUICK" : wantsBot ? "BOT" : "FRIEND";
       const opponent = wantsBot ? BOT_PLAYER_ID : players[1]!;
       this.engine = new MatchEngine([players[0]!, opponent], this.data.rules);
       if (wantsBot) this.engine.ready(BOT_PLAYER_ID);
       else await this.data.persistStart(
         this.matchId,
         this.engine.state.players,
-        eventMatch ? "EVENT" : blitzMatch ? "BLITZ" : quickMatch ? "QUICK" : "FRIEND",
+        this.matchMode === "BOT" ? "FRIEND" : this.matchMode,
       );
-      this.engine.state.deadline = Date.now() + (blitzMatch ? 8_000 : 10_000);
+      this.engine.state.deadline = Date.now() + (blitzMatch ? 8_000 : rankedMatch ? 15_000 : 10_000);
       const cards = wantsBot ? [] : await this.loadPlayerCards(this.engine.state.players);
       this.broadcast("READY_CHECK_STARTED", {
         deadline: this.engine.state.deadline,
         player_cards: cards,
-        match_mode: eventMatch ? "EVENT" : blitzMatch ? "BLITZ" : quickMatch ? "QUICK" : wantsBot ? "BOT" : "FRIEND",
+        match_mode: this.matchMode,
         event: event ? { id: event.id, league: event.league, title_tr: event.title_tr, title_en: event.title_en, accent: event.accent } : null,
         rules: {
           winning_score: this.data.rules.winningScore,
@@ -184,6 +193,7 @@ export class MatchRoom extends DurableObject<Env> {
       if (this.pause?.disconnectedPlayer === player) await this.resume(player);
       else {
         this.send(pair[1], "PLAYER_RECONNECTED", this.engine.snapshotFor(player));
+        if (this.engine.state.phase === "ANSWERING" && this.isChoiceMode()) this.sendAnswerPhaseTo(player);
         if (this.rematch) this.send(pair[1], player === this.rematch.requester ? "REMATCH_REQUESTED" : "REMATCH_OFFER", { match_id: this.rematch.matchId });
       }
     }
@@ -216,7 +226,7 @@ export class MatchRoom extends DurableObject<Env> {
     switch (cmd.event_type) {
       case "READY_CONFIRM": if (engine.ready(player)) {
         const cards = this.hasBot() ? [] : await this.loadPlayerCards(engine.state.players);
-        this.broadcast("MATCH_STARTED", { football_data_version_id: data.versionId, player_cards: cards });
+        this.broadcast("MATCH_STARTED", { football_data_version_id: data.versionId, player_cards: cards, match_mode: this.matchMode });
         await this.startSelection();
       } break;
       case "TEAM_SELECT": engine.select(player, String(cmd.payload.club_id)); break;
@@ -229,7 +239,9 @@ export class MatchRoom extends DurableObject<Env> {
         break;
       }
       case "ANSWER_SUBMIT": {
-        const clubs = [...engine.state.selections.values()] as [string, string]; const raw = String(cmd.payload.answer ?? ""); const normalized = normalizeAnswer(raw);
+        const clubs = [...engine.state.selections.values()] as [string, string];
+        const raw = resolveAnswerPayload(this.isChoiceMode(), this.answerChoices, cmd.payload);
+        const normalized = normalizeAnswer(raw);
         const correct = normalized ? await data.validate(clubs[0], clubs[1], normalized) : false;
         const receivedAt = Date.now(); engine.submit(player, raw, receivedAt, correct ? new Set([normalized]) : new Set());
         // correct flag is private to submitter only — never broadcast
@@ -240,9 +252,15 @@ export class MatchRoom extends DurableObject<Env> {
         if (engine.state.phase === "FINISHED" || engine.state.phase === "PAUSED") throw new Error("INVALID_PHASE");
         const now = Date.now(); if (now - (this.lastEmoteAt.get(player) ?? 0) < EMOTE_COOLDOWN_MS) throw new Error("EMOTE_COOLDOWN"); this.lastEmoteAt.set(player, now);
         const kind = String(cmd.payload.kind ?? "TEXT");
-        const requestedStyle = String(cmd.payload.chat_style_id ?? "");
-        let chatStyleId = chatStyleIds.has(requestedStyle) ? requestedStyle : this.chatStyles.get(player);
-        if (!chatStyleId) { try { chatStyleId = await data.getPlayerChatStyle(player); } catch { chatStyleId = "chat-classic"; } }
+        // Never trust the client-provided style id: premium chat ownership and
+        // equipped state are server-sourced. Cache it for the life of the room.
+        let chatStyleId = this.chatStyles.get(player);
+        if (!chatStyleId) {
+          try {
+            const equippedStyle = await data.getPlayerChatStyle(player);
+            chatStyleId = chatStyleIds.has(equippedStyle) ? equippedStyle : "chat-classic";
+          } catch { chatStyleId = "chat-classic"; }
+        }
         this.chatStyles.set(player, chatStyleId);
 
         if (kind === "EMOJI") {
@@ -301,16 +319,28 @@ export class MatchRoom extends DurableObject<Env> {
       else if (this.engine.state.phase === "COUNTDOWN") {
         this.engine.startAnswering(Date.now() + this.data.rules.answerMs);
         if (this.hasBot()) this.engine.submit(BOT_PLAYER_ID, "cevap yok", Date.now(), new Set());
-        // Training-only multiple choice: never attach choices outside bot matches
-        let choices: string[] = [];
-        if (this.hasBot()) {
+        this.answerChoices = [];
+        if (this.isChoiceMode()) {
           const clubs = [...this.engine.state.selections.values()] as [string, string];
-          if (clubs.length === 2) choices = await this.data.trainingChoices(clubs[0]!, clubs[1]!, 3);
+          const labels = this.hasBot()
+            ? await this.data.trainingChoices(clubs[0]!, clubs[1]!, 3)
+            : await this.data.competitiveChoices(clubs[0]!, clubs[1]!, 4);
+          const required = this.hasBot() ? 3 : 4;
+          if (labels.length < required) {
+            if (!this.hasBot()) {
+              this.broadcast("TEAM_SELECTION_INVALID", { reason: "CHOICES_UNAVAILABLE" });
+              await this.startSelection();
+              return;
+            }
+          } else {
+            this.answerChoices = labels.slice(0, required).map(label => ({ id: crypto.randomUUID(), label }));
+          }
         }
-        this.broadcast("ANSWER_PHASE_STARTED", {
-          deadline: this.engine.state.deadline,
-          ...(choices.length >= 2 ? { choices, input_mode: "CHOICE" } : { input_mode: "TEXT" }),
-        });
+        if (this.isChoiceMode() && this.answerChoices.length) {
+          for (const player of this.engine.state.players) if (player !== BOT_PLAYER_ID) this.sendAnswerPhaseTo(player);
+        } else {
+          this.broadcast("ANSWER_PHASE_STARTED", { deadline: this.engine.state.deadline, input_mode: "TEXT" });
+        }
         await this.ctx.storage.setAlarm(this.engine.state.deadline!);
       }
       else if (this.engine.state.phase === "ANSWERING") await this.startReveal();
@@ -351,6 +381,11 @@ export class MatchRoom extends DurableObject<Env> {
   }
 
   private hasBot(): boolean { return this.engine?.state.players.includes(BOT_PLAYER_ID) ?? false; }
+  private isChoiceMode(): boolean { return this.matchMode === "QUICK" || this.matchMode === "BLITZ" || this.matchMode === "BOT"; }
+  private sendAnswerPhaseTo(player: string): void {
+    const choices = [...this.answerChoices].sort(() => Math.random() - 0.5);
+    this.sendTo(player, "ANSWER_PHASE_STARTED", { deadline: this.engine?.state.deadline, input_mode: "CHOICE", choices });
+  }
 
   private async completeBotSelection(player: string): Promise<boolean> {
     const selected = this.engine!.state.selections.get(player);
@@ -410,7 +445,7 @@ export class MatchRoom extends DurableObject<Env> {
     if (!response.ok) throw new Error("REMATCH_PERSIST_FAILED");
   }
 
-  private async resume(_player: string): Promise<void> { const pause = this.pause!; this.pause = null; this.engine!.state.phase = pause.phase; this.engine!.state.deadline = Date.now() + pause.remainingMs; for (const player of this.engine!.state.players) this.sendTo(player, "PLAYER_RECONNECTED", this.engine!.snapshotFor(player)); if (pause.remainingMs > 0) await this.ctx.storage.setAlarm(this.engine!.state.deadline); else await this.alarm(); }
+  private async resume(_player: string): Promise<void> { const pause = this.pause!; this.pause = null; this.engine!.state.phase = pause.phase; this.engine!.state.deadline = Date.now() + pause.remainingMs; for (const player of this.engine!.state.players) { this.sendTo(player, "PLAYER_RECONNECTED", this.engine!.snapshotFor(player)); if (pause.phase === "ANSWERING" && this.isChoiceMode() && player !== BOT_PLAYER_ID) this.sendAnswerPhaseTo(player); } if (pause.remainingMs > 0) await this.ctx.storage.setAlarm(this.engine!.state.deadline); else await this.alarm(); }
   private async finishForfeit(leaver: string): Promise<void> { const winner = this.engine!.state.players.find(p => p !== leaver)!; this.pause = null; this.engine!.state.winnerId = winner; this.engine!.state.phase = "FINISHED"; this.engine!.state.deadline = null; if (!this.hasBot()) await this.data!.persistFinish(this.matchId, winner, this.engine!.state.scores); this.broadcast("MATCH_FINISHED", { winner_id: winner, forfeit: true }); }
   private async ensureLoaded(): Promise<void> {
     if (this.engine && this.data) return;
@@ -422,6 +457,8 @@ export class MatchRoom extends DurableObject<Env> {
       this.persistedRounds = stored.persistedRounds ?? 0;
       this.rematch = stored.rematch ?? null;
       this.eventScope = stored.event ?? null;
+      this.matchMode = stored.matchMode ?? (stored.matchId.startsWith("blitz-") ? "BLITZ" : stored.matchId.startsWith("ranked-") ? "RANKED" : stored.matchId.startsWith("quick-") ? "QUICK" : "FRIEND");
+      this.answerChoices = stored.answerChoices ?? [];
     }
     if (!this.data && this.env.SUPABASE_URL && this.env.SUPABASE_SERVICE_ROLE_KEY) {
       const restoreOpts: { requestedVersion?: string; leagueFilter?: string | null; event?: EventScope | null } = {
@@ -430,6 +467,8 @@ export class MatchRoom extends DurableObject<Env> {
       };
       if (stored?.dataVersionId) restoreOpts.requestedVersion = stored.dataVersionId;
       this.data = await createMatchData(this.env, restoreOpts);
+      if (this.matchMode === "BLITZ") this.data.rules = applyMatchModeRules(this.data.rules, "blitz");
+      if (this.matchMode === "RANKED") this.data.rules = applyMatchModeRules(this.data.rules, "ranked");
     }
     for (const ws of this.ctx.getWebSockets()) {
       const attachment = ws.deserializeAttachment() as { player?: string } | null;
@@ -447,6 +486,8 @@ export class MatchRoom extends DurableObject<Env> {
       rematch: this.rematch,
       leagueFilter: this.data.leagueFilter,
       event: this.eventScope ?? this.data.event,
+      matchMode: this.matchMode,
+      answerChoices: this.answerChoices,
     } satisfies StoredRoom);
   }
   private async loadPlayerCards(playerIds: string[]): Promise<Record<string, unknown>[]> {
@@ -461,7 +502,15 @@ export class MatchRoom extends DurableObject<Env> {
       });
       if (!response.ok) return [];
       const value = await response.json();
-      return Array.isArray(value) ? value as Record<string, unknown>[] : [];
+      if (!Array.isArray(value)) return [];
+      if (this.matchMode !== "QUICK" && this.matchMode !== "BLITZ" && this.matchMode !== "RANKED") return value as Record<string, unknown>[];
+      const profileResponse = await fetch(`${this.env.SUPABASE_URL}/rest/v1/profiles?id=in.(${uuids.join(",")})&select=id,trophies,blitz_trophies,ranked_trophies`, {
+        headers: { apikey: this.env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${this.env.SUPABASE_SERVICE_ROLE_KEY}` },
+      });
+      if (!profileResponse.ok) return value as Record<string, unknown>[];
+      const profiles = await profileResponse.json() as { id: string; trophies: number; blitz_trophies: number; ranked_trophies: number }[];
+      const trophyByPlayer = new Map(profiles.map(profile => [profile.id, this.matchMode === "BLITZ" ? profile.blitz_trophies : this.matchMode === "RANKED" ? profile.ranked_trophies : profile.trophies]));
+      return (value as Record<string, unknown>[]).map(card => ({ ...card, trophies: trophyByPlayer.get(String(card.player_id)) ?? Number(card.trophies ?? 0) }));
     } catch { return []; }
   }
   private envelope(type: ServerEventType, payload: Record<string, unknown>): ServerMessage { return { protocol_version: 1, match_id: this.matchId, event_id: crypto.randomUUID(), server_timestamp: new Date().toISOString(), event_type: type, payload }; }
@@ -484,33 +533,42 @@ export default { async fetch(request: Request, env: Env): Promise<Response> {
       const matchId = body.match_id?.trim();
       if (!matchId || matchId.length > 100) return Response.json({ error: "INVALID_MATCH_ID" }, { status: 400, headers: corsHeaders });
       const mode: MatchTicketMode | undefined =
-        body.mode === "bot" || body.mode === "quick" || body.mode === "blitz" || body.mode === "event" ? body.mode : undefined;
+        body.mode === "bot" || body.mode === "quick" || body.mode === "blitz" || body.mode === "ranked" || body.mode === "event" ? body.mode : undefined;
       const token = await createMatchTicket({ playerId, matchId, mode }, env.MATCH_TOKEN_SECRET);
       return Response.json({ token, expires_in: 60 }, { headers: corsHeaders });
     } catch { return Response.json({ error: "UNAUTHORIZED" }, { status: 401, headers: corsHeaders }); }
   }
-  if ((url.pathname === "/quick-match" || url.pathname === "/blitz-match" || url.pathname === "/event-match") && request.method === "POST") {
+  if ((url.pathname === "/quick-match" || url.pathname === "/blitz-match" || url.pathname === "/ranked-match" || url.pathname === "/event-match") && request.method === "POST") {
     try {
       const bearer = request.headers.get("Authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
       if (!bearer) return Response.json({ error: "UNAUTHORIZED" }, { status: 401, headers: corsHeaders });
       const playerId = await verifySupabaseAccessToken(bearer, env);
       const body = await request.json<{ action?: "join" | "cancel"; region?: string }>();
-      const queueKind: QueueKind = url.pathname === "/blitz-match" ? "blitz" : url.pathname === "/event-match" ? "event" : "quick";
+      const queueKind: QueueKind = url.pathname === "/blitz-match" ? "blitz" : url.pathname === "/ranked-match" ? "ranked" : url.pathname === "/event-match" ? "event" : "quick";
       if (queueKind === "event" && body.action !== "cancel") {
         const live = await loadLiveEventScope(env);
         if (!live) return Response.json({ status: "NO_EVENT", mode: "event" }, { headers: corsHeaders });
       }
-      // trophies from DB (not client) — quick uses trophies, blitz uses blitz_trophies; event ignores cups
+      if (queueKind === "ranked" && body.action !== "cancel") {
+        const unlockedResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/ranked_player_unlocked`, {
+          method: "POST",
+          headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ p_player_id: playerId }),
+        });
+        const unlocked = unlockedResponse.ok && await unlockedResponse.json() === true;
+        if (!unlocked) return Response.json({ status: "RANKED_LOCKED", required_quick_matches: 5, mode: "ranked" }, { headers: corsHeaders });
+      }
+      // Trophies come from DB, never the client. Each competitive mode has its own ladder.
       let trophies = 0;
       if (body.action !== "cancel" && queueKind !== "event" && env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY) {
         try {
-          const select = queueKind === "blitz" ? "blitz_trophies" : "trophies";
+          const select = queueKind === "blitz" ? "blitz_trophies" : queueKind === "ranked" ? "ranked_trophies" : "trophies";
           const profileResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/profiles?id=eq.${playerId}&select=${select}`, {
             headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}` },
           });
           if (profileResponse.ok) {
-            const rows = await profileResponse.json() as { trophies?: number; blitz_trophies?: number }[];
-            const raw = queueKind === "blitz" ? rows[0]?.blitz_trophies : rows[0]?.trophies;
+            const rows = await profileResponse.json() as { trophies?: number; blitz_trophies?: number; ranked_trophies?: number }[];
+            const raw = queueKind === "blitz" ? rows[0]?.blitz_trophies : queueKind === "ranked" ? rows[0]?.ranked_trophies : rows[0]?.trophies;
             trophies = Math.max(0, Math.floor(Number(raw ?? 0)));
           }
         } catch { /* queue still works with 0 trophies fallback */ }

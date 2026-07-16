@@ -5,12 +5,15 @@ export interface MatchRules extends EngineRules { teamPoolSize: number; selectio
 const defaultRules: MatchRules = { teamPoolSize: 6, selectionMs: 20_000, answerMs: 15_000, revealMs: 4_000, reconnectMs: 60_000, suddenDeathMinAnswers: 1, winningScore: 3, maximumRounds: 9 };
 /** Blitz: short timers, first to 2, separate trophy ladder on finish. */
 export const blitzRules: Partial<MatchRules> = { selectionMs: 12_000, answerMs: 8_000, revealMs: 3_000, winningScore: 2, maximumRounds: 5, teamPoolSize: 6 };
+/** Ranked keeps the classic match length but gives typed answers five extra seconds. */
+export const rankedRules: Partial<MatchRules> = { selectionMs: 25_000, answerMs: 20_000, winningScore: 3, maximumRounds: 9, teamPoolSize: 6 };
 export function applyMatchModeRules(base: MatchRules, mode?: string): MatchRules {
   if (mode === "blitz") return { ...base, ...blitzRules };
+  if (mode === "ranked") return { ...base, ...rankedRules };
   return base;
 }
 
-export type PersistMatchMode = "FRIEND" | "QUICK" | "BLITZ" | "EVENT";
+export type PersistMatchMode = "FRIEND" | "QUICK" | "BLITZ" | "RANKED" | "EVENT";
 
 export interface EventScope {
   id: string;
@@ -29,6 +32,7 @@ export interface MatchData {
   hasPair(a: string, b: string): Promise<boolean>;
   validate(a: string, b: string, normalized: string): Promise<boolean>;
   trainingChoices(a: string, b: string, count?: number): Promise<string[]>;
+  competitiveChoices(a: string, b: string, count?: number): Promise<string[]>;
   pickPair(excluded: string[], minimumAnswers: number): Promise<{ clubs: [Club, Club] } | null>;
   getPlayerChatStyle(playerId: string): Promise<string>;
   playerOwnsEmote(playerId: string, emoteId: string): Promise<boolean>;
@@ -90,6 +94,20 @@ export async function createMatchData(env: Env, options?: { requestedVersion?: s
     trainingChoices: async (a, b, count = 3) => {
       try {
         const value = await rpc<unknown>(env, "match_training_choices", {
+          version_id: bootstrap.football_data_version_id,
+          club_a_external: a,
+          club_b_external: b,
+          choice_count: count,
+        });
+        if (!Array.isArray(value)) return [];
+        return value.map(String).filter(Boolean);
+      } catch {
+        return [];
+      }
+    },
+    competitiveChoices: async (a, b, count = 4) => {
+      try {
+        const value = await rpc<unknown>(env, "match_competitive_choices", {
           version_id: bootstrap.football_data_version_id,
           club_a_external: a,
           club_b_external: b,

@@ -1,6 +1,6 @@
 # MVP uygulama durumu
 
-Son güncelleme: 12 Temmuz 2026
+Son güncelleme: 13 Temmuz 2026
 
 Bu dosya gerçekleşen uygulamayı izler. Ürün gereksinimlerinin kesin kaynağı değişmeden `football_link_mvp_prd_v1.1.md` dosyasıdır.
 
@@ -18,9 +18,9 @@ Bu dosya gerçekleşen uygulamayı izler. Ürün gereksinimlerinin kesin kaynağ
 | 1 — Veri ve oyun çekirdeği | ✅ | V3 builder, schema v2 atomik importer, exact-match normalizasyonu, sürümlü futbol verisi, state machine, WebSocket protokolü ve testler var. |
 | 2 — İki oyunculu dikey prototip | ✅ | Seçim, geri sayım, cevap, reveal, skor, ani ölüm, timeout ve reconnect çalışıyor. |
 | 3 — Gerçek hesap ve sosyal | 🟡 | Supabase Auth ve sosyal migration canlı. İki production hesabıyla arkadaş isteği/kabul/listeleme backend zinciri doğrulandı; odak yenileme ve hata geri bildirimi düzeltildi. Maç davetinin iki cihaz smoke testi bekliyor. |
-| 4 — Hızlı Maç ve kupa | 🟡 | Global Durable Object kuyruğu, Hızlı Maçta idempotent +25/−10 kupa güncellemesi, aktif sezon lig tablosu ve maç geçmişi kodlandı; migration deploy ve iki cihazlı queue smoke testi bekliyor. |
+| 4 — Üç rekabetçi mod ve kupa | 🟡 | Quick (4 şık, 15 sn, ilk 3), Blitz (4 şık, 8 sn, ilk 2) ve Ranked (yazılı, 20 sn, ilk 3) için ayrı queue, kupa ve ladder kodlandı. Ranked 5 Quick maçla server-side açılır. Migration/Worker deploy ve iki cihazlı smoke testi bekliyor. |
 | 5 — Yönetim ve veri operasyonu | 🟡 | Güvenli web kontrol odası; canlı metrikler, veri sürümü rollback, import geçmişi, aktif kulüpler, canlı oyun/ekonomi ayarları ve sonuç bildirimi yönetimiyle hazır. Oyuncu/alias düzenleme sonraki dilimde. |
-| 6 — Gelir modeli | 🟡 | Başlangıç kozmetik envanteri, güvenli kuşanma RPC'si ve mağaza ekranı kodlandı; reklam ve satın alma yok, migration deploy bekliyor. |
+| 6 — Gelir modeli | 🟡 | Başlangıç kozmetik envanteri ve mağaza ekranına ek olarak maç sonu test reklamı, reklam muafiyeti entitlement modeli ve Shop durum kartı kodlandı. Gerçek AdMob kimlikleri, mağaza ürünü ve sunucu tarafı makbuz doğrulaması hesapların açılmasını bekliyor. |
 | 6b — Sticky retention (Phase 1) | 🟡 | Player album + daily quests + metin share kodlandı (`20260713150000_phase1_album_quests.sql`); Supabase deploy ve canlı smoke bekliyor. |
 | 7 — Kapalı Android beta | 🟡 | Expo Doctor ve Android export geçiyor; gerçek cihaz matrisi, AAB ve çökme takibi eksik. |
 | 8 — Market hazırlığı | 🟡 | Cihaz diline göre Türkçe/İngilizce UI hazır; hukuk metinleri, mağaza varlıkları ve iOS doğrulaması yok. |
@@ -47,22 +47,22 @@ Bu dosya gerçekleşen uygulamayı izler. Ürün gereksinimlerinin kesin kaynağ
 | 16 | Ani ölüm | ✅ | Kullanılmamış, cevaplı pair seçimi ve tekrar roundları var. |
 | 17 | 10 saniyelik reconnect | ⚠️ | Kullanılabilirlik için 60 saniye uygulandı; PRD kararı güncellenmeli ya da kod 10 saniyeye dönmeli. |
 | 18 | Kasıtlı ayrılmada hükmen sonuç | ✅ | Çıkış onayı sonrası `LEAVE_MATCH` hükmen sonuç üretiyor. |
-| 19 | Kupa yalnızca Hızlı Maçta değişir | 🟡 | Yalnız QUICK maçın ilk tamamlanmasında idempotent +25/−10 kupa ve lig kaydı uygulanıyor; migration deploy ve canlı iki cihaz doğrulaması bekliyor. |
+| 19 | Her rekabetçi modun kupası ayrıdır | 🟡 | QUICK +20/−8, BLITZ +15/−5 ve RANKED +25/−15 idempotent finish RPC'sinde ayrı kolonlara yazılır; migration deploy ve canlı iki cihaz doğrulaması bekliyor. |
 | 20 | Oda, kod ve davet bağlantısı | 🟡 | Güçlü rastgele oda oluşturma, native davet paylaşımı, arkadaş listesinden davet ve auth boyunca korunan deep link hazır; migration deploy ve iki cihazlı deep-link smoke testi bekliyor. |
 | 21 | Arkadaş maçında rövanş | 🟡 | Maç sonrası teklif/kabul/ret WebSocket protokolü ve iki oyuncunun aynı yeni odaya yönlenmesi hazır; iki cihazlı canlı smoke testi bekliyor. |
 | 22 | Reveal ekranından sonuç bildirimi | ✅ | Gerçek maç reveal/sonuç ekranında neden seçimi var; authenticated, katılımcı kontrollü ve idempotent RPC canlı rollback smoke testini geçti. |
-| 23 | Normal maç sonu reklamı | ⬜ | Yok. |
-| 24 | Reklam kaldırma doğrulaması | ⬜ | Yok. |
+| 23 | Normal maç sonu reklamı | 🟡 | Google test interstitial'ı normal maçtan Maç Merkezi'ne dönüşte gösteriliyor; bot/antrenman hariç. Gerçek AdMob kimlikleri, izin/consent akışı ve cihaz smoke testi bekliyor. |
+| 24 | Reklam kaldırma doğrulaması | 🟡 | İstemciden yazılamayan, RLS kontrollü entitlement modeli ve Shop durum kartı hazır. Google/Apple Billing ürünü ile sunucu tarafı makbuz doğrulaması mağaza hesaplarını bekliyor. |
 | 25 | Maç ve roundların veritabanına kaydı | 🟡 | Production migration uygulandı; idempotent match/round/submission/finish RPC zinciri service_role ile rollback'li canlı DB smoke testini geçti. İki cihazlı Worker smoke testi bekliyor. |
 | 26 | Yönetici veri yönetimi | 🟡 | `app_metadata.role=admin` kontrollü web konsolu; canlı sağlık, veri sürümü/import, güvenli rollback, aktif kulüp, oyun ayarları ve moderasyon var. Oyuncu/alias inceleme-düzenleme eksik. |
 | 27 | Bütün ana metinlerin çeviri anahtarları | ✅ | Auth, lobi, maç, hata ve erişilebilirlik metinleri tip güvenli Türkçe/İngilizce sözlükte; cihaz locale'i otomatik seçiliyor. |
 | 28 | Android kapalı beta paketi | 🟡 | Android bundle üretiliyor; imzalı kapalı beta AAB henüz yok. |
 
-Özet: 16 tamamlandı, 8 kısmi, 1 bilinçli sapma, 3 başlanmadı. Arkadaş/mesaj katmanının canlı doğrulaması henüz yapılmadığından durum korunmuştur.
+Özet: 16 tamamlandı, 11 kısmi, 1 bilinçli sapma, 0 başlanmadı. Arkadaş/mesaj ve gelir katmanlarının canlı doğrulaması henüz yapılmadığından ilgili durumlar kısmi tutulmuştur.
 
 ## MVP dışı geliştirme araçları
 
-- Test botu PRD'de MVP dışıdır. Yalnız geliştiricinin tek cihazla çekirdek akışı sınaması için kullanılır; kupa veya gerçek matchmaking davranışı sayılmaz.
+- Test botu PRD'de MVP dışıdır. Yeni hesapların ilk giriş tutorial'ı ve geliştiricinin tek cihazla çekirdek akışı sınaması için kullanılır; kupa veya gerçek matchmaking davranışı sayılmaz. Tutorial tamamlanması profilde kalıcıdır ve bitiren oyuncuya otomatik olarak tekrar gösterilmez.
 - Production bot smoke ve reconnect smoke testleri canlı Worker üzerinde çalıştırılabilir.
 - Football Data Builder v3; 131 kulüp config'i, güncel kadro/transfer senkronizasyonu, freshness raporu ve server-only schema v2 export'u içerir. Mevcut paketlenmiş export 161 gerçek oyuncu ve 245 oynanabilir takım çifti içerir; 5.000 gerçek oyuncu production veri hedefi henüz tamamlanmadı.
 - Schema v2 migration ve v3 export canlı Supabase'e MCP ile yayınlandı: 161 oyuncu, 170 kabul edilen alias, 472 kulüp üyeliği ve 245 pair. Lobi ile alt navigasyonun ilk mağaza-kalitesi görsel geçişi Android export ile doğrulandı.

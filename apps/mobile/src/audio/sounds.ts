@@ -1,4 +1,11 @@
-import { Audio, type AVPlaybackSource, type AVPlaybackStatus } from "expo-av";
+import { AppState, type AppStateStatus } from "react-native";
+import {
+  Audio,
+  InterruptionModeAndroid,
+  InterruptionModeIOS,
+  type AVPlaybackSource,
+  type AVPlaybackStatus,
+} from "expo-av";
 import { getAudioPrefsSync, loadAudioPrefs, subscribeAudioPrefs } from "./preferences";
 
 export type SfxId =
@@ -71,14 +78,17 @@ async function safeUnload(sound: Audio.Sound | null | undefined) {
 async function ensureConfigured() {
   if (configured) return;
   try {
+    // Android can deactivate Expo's global AV session after an interruption or
+    // an app background/foreground cycle. Re-enable it before requesting focus.
+    await Audio.setIsEnabledAsync(true);
     await Audio.setAudioModeAsync({
       allowsRecordingIOS: false,
       playsInSilentModeIOS: false,
       playThroughEarpieceAndroid: false,
       staysActiveInBackground: false,
       shouldDuckAndroid: true,
-      interruptionModeIOS: 1,
-      interruptionModeAndroid: 1,
+      interruptionModeIOS: InterruptionModeIOS.MixWithOthers,
+      interruptionModeAndroid: InterruptionModeAndroid.DuckOthers,
     });
     configured = true;
   } catch (error) {
@@ -334,6 +344,28 @@ export async function stopSuddenDeathBed() {
 // Keep prefs changes serialized with the same queue.
 subscribeAudioPrefs(() => {
   void runExclusive(async () => {
+    await syncLobbyMusic();
+    await syncSuddenDeathBed();
+  });
+});
+
+// Android may invalidate ExoPlayer handles while the app is backgrounded or
+// after another app owns audio focus. Mark the session stale, then recreate any
+// dead handles and resume only the beds the UI still wants.
+let lastAppState: AppStateStatus = AppState.currentState;
+AppState.addEventListener("change", nextState => {
+  const returningToForeground =
+    nextState === "active" && lastAppState !== "active";
+  lastAppState = nextState;
+
+  if (nextState !== "active") {
+    configured = false;
+    return;
+  }
+  if (!returningToForeground) return;
+
+  void runExclusive(async () => {
+    await ensureConfigured();
     await syncLobbyMusic();
     await syncSuddenDeathBed();
   });

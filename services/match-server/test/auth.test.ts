@@ -14,4 +14,9 @@ describe("match tickets", () => {
     const token = await createMatchTicket({ playerId: "player-1", matchId: "room-a" }, secret);
     await expect(verifyMatchTicket(token, "room-a", "another-secret-that-is-long-enough")).rejects.toThrow();
   });
+
+  it("keeps Ranked mode bound to the signed match ticket", async () => {
+    const token = await createMatchTicket({ playerId: "player-ranked", matchId: "ranked-room", mode: "ranked" }, secret);
+    await expect(verifyMatchTicket(token, "ranked-room", secret)).resolves.toMatchObject({ playerId: "player-ranked", mode: "ranked" });
+  });
 });

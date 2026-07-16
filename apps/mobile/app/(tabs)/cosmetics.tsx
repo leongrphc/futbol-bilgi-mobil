@@ -9,6 +9,7 @@ import { setChatStyle, type ChatStyleId } from "@/cosmetics/chat-style";
 import { badgeGlyph, pitchThemes } from "@/cosmetics/loadout";
 import { useAuth } from "@/auth/auth-context";
 import { CoinPill, DollarPill } from "@/economy/CoinPill";
+import { defaultMonetizationStatus, getMonetizationStatus, type MonetizationStatus } from "@/monetization/entitlements";
 
 type Kind = "PITCH_THEME" | "BADGE" | "CHAT_STYLE" | "EMOTE";
 type Cosmetic = {
@@ -38,12 +39,17 @@ export default function Cosmetics() {
   const [busyId, setBusyId] = useState<string>();
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
+  const [monetization, setMonetization] = useState<MonetizationStatus>(defaultMonetizationStatus);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase.rpc("cosmetics_mine");
+    const [{ data, error }, monetizationStatus] = await Promise.all([
+      supabase.rpc("cosmetics_mine"),
+      getMonetizationStatus(),
+    ]);
     setLoadError(Boolean(error));
     if (!error) setItems((data ?? []) as Cosmetic[]);
+    setMonetization(monetizationStatus);
     setLoading(false);
   }, []);
   useFocusEffect(useCallback(() => { void load(); }, [load]));
@@ -90,6 +96,15 @@ export default function Cosmetics() {
       <ScrollView contentContainerStyle={s.page}>
         <View style={s.shopHeading}><Text style={s.kicker}>{tr.cosmetics.kicker}</Text><Text style={s.title}>{tr.cosmetics.title}</Text><Text style={s.note}>{tr.cosmetics.note}</Text></View>
         <View style={s.wallet}><Text style={s.walletLabel}>{tr.cosmetics.wallet}</Text><View style={s.walletBalances}><CoinPill amount={profile?.coins ?? 0} large /><DollarPill amount={profile?.dollars ?? 0} large /></View></View>
+        <View style={[s.adFreeCard, monetization.adsRemoved && s.adFreeCardActive]}>
+          <View style={s.adFreeIcon}><Text style={s.adFreeIconText}>{monetization.adsRemoved ? "✓" : "×"}</Text></View>
+          <View style={s.adFreeInfo}>
+            <Text style={s.adFreeKicker}>{tr.monetization.kicker}</Text>
+            <Text style={s.adFreeTitle}>{tr.monetization.removeAds}</Text>
+            <Text style={s.adFreeCopy}>{monetization.adsRemoved ? tr.monetization.activeCopy : tr.monetization.pendingCopy}</Text>
+          </View>
+          <View style={[s.adFreeStatus, monetization.adsRemoved && s.adFreeStatusActive]}><Text style={[s.adFreeStatusText, monetization.adsRemoved && s.adFreeStatusTextActive]}>{monetization.adsRemoved ? tr.monetization.active : tr.monetization.soon}</Text></View>
+        </View>
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.categoryRail}>
           {categories.map(category => {
@@ -124,6 +139,7 @@ function ProductCard({ item, busyId, onBuy, onEquip }: { item: Cosmetic; busyId?
   const dollar = item.price_dollars > 0;
   const price = dollar ? item.price_dollars : item.price_coins;
   const busy = busyId === item.item_id;
+  const hasMatchEffect = dollar && item.kind !== "BADGE";
   return (
     <View style={[s.card, item.equipped && owned && { borderColor: item.accent }, dollar && s.premiumCard]}>
       {dollar && <View style={s.specialRibbon}><Text style={s.specialText}>{tr.cosmetics.special}</Text></View>}
@@ -136,6 +152,7 @@ function ProductCard({ item, busyId, onBuy, onEquip }: { item: Cosmetic; busyId?
             : <BadgePreview itemId={item.item_id} accent={item.accent} />}
       <View style={s.info}>
         <Text style={s.name}>{item.name}</Text>
+        {hasMatchEffect && <View style={s.effectTag}><Text style={s.effectTagSpark}>✦</Text><Text style={s.effectTagText}>{tr.cosmetics.matchEffect}</Text></View>}
         <View style={s.productMeta}>
           <Price currency={dollar ? "DOLLAR" : "COIN"} amount={price} />
           {owned && <Text style={s.owned}>{item.equipped ? tr.cosmetics.equipped : tr.cosmetics.owned}</Text>}
@@ -178,6 +195,18 @@ const s = StyleSheet.create({
   wallet: { gap: 9, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 16, padding: 14 },
   walletLabel: { color: colors.muted, fontSize: 9, fontWeight: "900", letterSpacing: 1.4 },
   walletBalances: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  adFreeCard: { flexDirection: "row", alignItems: "center", gap: 12, borderWidth: 1, borderColor: "rgba(114,199,255,.42)", borderRadius: 16, padding: 14, backgroundColor: "#102431" },
+  adFreeCardActive: { borderColor: colors.primary, backgroundColor: "rgba(89,213,166,.09)" },
+  adFreeIcon: { width: 42, height: 42, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceElevated, borderWidth: 1, borderColor: colors.border },
+  adFreeIconText: { color: colors.primary, fontSize: 22, fontWeight: "900" },
+  adFreeInfo: { flex: 1, gap: 3 },
+  adFreeKicker: { color: colors.accent, fontSize: 8, fontWeight: "900", letterSpacing: 1.1 },
+  adFreeTitle: { color: colors.text, fontSize: 16, fontWeight: "900" },
+  adFreeCopy: { color: colors.muted, fontSize: 11, lineHeight: 15 },
+  adFreeStatus: { borderRadius: 999, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 9, paddingVertical: 5 },
+  adFreeStatusActive: { borderColor: colors.primary, backgroundColor: "rgba(89,213,166,.12)" },
+  adFreeStatusText: { color: colors.muted, fontSize: 8, fontWeight: "900", letterSpacing: .7 },
+  adFreeStatusTextActive: { color: colors.primary },
   categoryRail: { gap: 9, paddingRight: 22 },
   categoryTab: { width: 112, minHeight: 86, borderRadius: 15, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, padding: 11, justifyContent: "space-between" },
   categoryTabActive: { backgroundColor: colors.floodlight, borderColor: colors.floodlight },
@@ -207,6 +236,9 @@ const s = StyleSheet.create({
   badgeGlyph: { fontSize: 10, fontWeight: "900", transform: [{ rotate: "-45deg" }] },
   info: { flex: 1, gap: 5 },
   name: { color: colors.text, fontWeight: "900", paddingRight: 12 },
+  effectTag: { alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 4, borderRadius: 999, paddingHorizontal: 7, paddingVertical: 3, backgroundColor: "rgba(102,228,255,.10)", borderWidth: 1, borderColor: "rgba(102,228,255,.30)" },
+  effectTagSpark: { color: "#66E4FF", fontSize: 8, fontWeight: "900" },
+  effectTagText: { color: "#A9EFFF", fontSize: 7, fontWeight: "900", letterSpacing: .7 },
   productMeta: { flexDirection: "row", alignItems: "center", gap: 7 },
   priceChip: { flexDirection: "row", alignItems: "center", gap: 3 },
   priceChipDollar: {},

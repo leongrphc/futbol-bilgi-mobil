@@ -25,7 +25,7 @@ Kurallar: bot maçları album/quest yazmaz; cevap listesi istemciye gitmez; clai
 | ID | Özellik | Durum |
 |---|---|---|
 | G3 | Solo daily board | ❌ kaldırıldı (web aramayla kolay hile) |
-| A1 | Tutorial bot path | ✅ Lobby + bot MCQ |
+| A1 | Zorunlu ilk giriş tutorial bot path | ✅ İlk girişte doğrudan bot MCQ; bitiş profilde tek seferlik saklanır |
 | E1 | Light difficulty tiers | ❌ solo ile gitti |
 
 Eğitim: bot/tutorial 3 şıklı cevap.
@@ -41,15 +41,18 @@ Eğitim: bot/tutorial 3 şıklı cevap.
 
 Trophy lookup server-side from `profiles`; client cannot spoof cups.
 
-## Phase 5 — Meta / diff (kodlandı — blitz hariç)
+## Phase 5 — Üç rekabetçi tempo (kodlandı — deploy gerekir)
 
 | ID | Özellik | Durum |
 |---|---|---|
 | D2 | Club mastery | `club_mastery` + competition UI |
 | C6 | Opponent card | READY phase cards (trophies + form) |
 | C8 | Weekly theme banner | lobby `weekly_theme()` (display only) |
-| G1 | Blitz mode | ✅ ayrı kuyruk + `blitz_trophies` (+15/−5), 8s / first-to-2 |
-| — | Ranked clarity | ✅ Lobby DERECELİ / BLITZ / DERECESİZ; Lig blitz merdiveni; finish kupa delta |
+| G0 | Quick Match | ✅ 4 zor şık, 15 sn, ilk 3; ayrı Quick kupası (+20/−8) ve ladder |
+| G1 | Blitz | ✅ 4 zor şık, 8 sn, ilk 2; ayrı `blitz_trophies` (+15/−5) ve ladder |
+| G2 | Ranked | ✅ yazılı exact-match, 20 sn, ilk 3; ayrı `ranked_trophies` (+25/−15) ve ladder |
+| G3 | Ranked unlock | ✅ 5 tamamlanmış Quick maç; UI + Worker/RPC enforcement |
+| — | Üç mod kimliği | ✅ Lobby'de üç ayrı kart; Lig ekranında QUICK / BLITZ / RANKED sekmeleri |
 
 ## Phase 6 — Match reacts (kodlandı)
 

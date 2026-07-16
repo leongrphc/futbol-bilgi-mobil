@@ -453,6 +453,8 @@ export type Database = {
           display_name: string
           id: string
           player_code: string
+          ranked_trophies: number
+          tutorial_completed_at: string | null
           trophies: number
         }
         Insert: {
@@ -464,6 +466,8 @@ export type Database = {
           display_name?: string
           id: string
           player_code: string
+          ranked_trophies?: number
+          tutorial_completed_at?: string | null
           trophies?: number
         }
         Update: {
@@ -475,6 +479,8 @@ export type Database = {
           display_name?: string
           id?: string
           player_code?: string
+          ranked_trophies?: number
+          tutorial_completed_at?: string | null
           trophies?: number
         }
         Relationships: []
@@ -694,6 +700,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      monetization_status: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          ads_removed: boolean
+          expires_at: string | null
+          source: string | null
+        }[]
+      }
       album_mine: {
         Args: Record<PropertyKey, never>
         Returns: {
@@ -866,6 +880,9 @@ export type Database = {
       }
       competition_nearby: { Args: Record<PropertyKey, never>; Returns: { display_name: string; is_me: boolean; player_code: string; rank: number; tier: string; trophies: number }[] }
       competition_blitz_nearby: { Args: Record<PropertyKey, never>; Returns: { blitz_trophies: number; display_name: string; is_me: boolean; player_code: string; rank: number }[] }
+      competition_quick_nearby: { Args: Record<PropertyKey, never>; Returns: { display_name: string; is_me: boolean; player_code: string; rank: number; trophies: number }[] }
+      competition_ranked_nearby: { Args: Record<PropertyKey, never>; Returns: { display_name: string; is_me: boolean; player_code: string; rank: number; ranked_trophies: number }[] }
+      ranked_progress: { Args: Record<PropertyKey, never>; Returns: { completed_quick_matches: number; required_quick_matches: number; unlocked: boolean } }
       competition_claim_season_reward: { Args: { p_season_id: string }; Returns: string }
       submit_result_report: {
         Args: {
