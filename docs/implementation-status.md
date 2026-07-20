@@ -1,6 +1,6 @@
 # MVP uygulama durumu
 
-Son güncelleme: 13 Temmuz 2026
+Son güncelleme: 18 Temmuz 2026
 
 Bu dosya gerçekleşen uygulamayı izler. Ürün gereksinimlerinin kesin kaynağı değişmeden `football_link_mvp_prd_v1.1.md` dosyasıdır.
 
@@ -24,6 +24,8 @@ Bu dosya gerçekleşen uygulamayı izler. Ürün gereksinimlerinin kesin kaynağ
 | 6b — Sticky retention (Phase 1) | 🟡 | Player album + daily quests + metin share kodlandı (`20260713150000_phase1_album_quests.sql`); Supabase deploy ve canlı smoke bekliyor. |
 | 7 — Kapalı Android beta | 🟡 | Expo Doctor ve Android export geçiyor; gerçek cihaz matrisi, AAB ve çökme takibi eksik. |
 | 8 — Market hazırlığı | 🟡 | Cihaz diline göre Türkçe/İngilizce UI hazır; hukuk metinleri, mağaza varlıkları ve iOS doğrulaması yok. |
+| 9 — Başarımlar ve profil vitrini | 🟡 | Altı sunucu hesaplı başarım, üç yuvalı vitrin ve rakip kartı entegrasyonu kodlandı; production migration, RPC ve canlı Worker bot/reconnect smoke testleri geçti. Mobil release ile iki cihaz smoke testi bekliyor. |
+| 10 — Oyuncu kariyer profili | 🟡 | Lobi adından açılan TR/EN profil; G/M oranı, form, seri, mod karnesi, cevap/tur isabeti, rekorlar, albüm–kulüp hafızası ve başarım vitriniyle kodlandı. Migration production'da ve gerçek authenticated RPC smoke testi geçti; mobil release ve cihaz görsel smoke testi bekliyor. |
 
 ## PRD kabul kriterleri
 
@@ -67,6 +69,8 @@ Bu dosya gerçekleşen uygulamayı izler. Ürün gereksinimlerinin kesin kaynağ
 - Football Data Builder v3; 131 kulüp config'i, güncel kadro/transfer senkronizasyonu, freshness raporu ve server-only schema v2 export'u içerir. Mevcut paketlenmiş export 161 gerçek oyuncu ve 245 oynanabilir takım çifti içerir; 5.000 gerçek oyuncu production veri hedefi henüz tamamlanmadı.
 - Schema v2 migration ve v3 export canlı Supabase'e MCP ile yayınlandı: 161 oyuncu, 170 kabul edilen alias, 472 kulüp üyeliği ve 245 pair. Lobi ile alt navigasyonun ilk mağaza-kalitesi görsel geçişi Android export ile doğrulandı.
 - Kuşanılan pitch theme artık maç atmosferini, skor panelini, saha çizgilerini ve skor ışıklarını değiştiriyor; badge oyuncunun skor kimliğinde renkli arma olarak render ediliyor. Mağaza kartları gerçek pitch/badge önizlemeleri gösteriyor.
+- Başarımlar rekabetçi maçların kalıcı round/submission kayıtlarından hesaplanıyor; production migration canlı ve authenticated okuma/vitrin yazma/maç değerlendirme zinciri transaction rollback smoke testini geçti. Son Saniye için Worker son 1 saniye bilgisini service-role RPC yükünde saklıyor. Oyuncu açtığı üç unvanı vitrine alabiliyor ve rakip yalnızca bu üç rozeti READY kartında görüyor.
+- Kuyruktan normal vazgeçiş artık anında ceza üretmiyor. Modlar arasında ortak sayaç 10 dakikada 10 gerçek iptalde 45 saniye cooldown uygular; sırada olmayan sahte iptaller sayılmaz ve başarılı eşleşme seriyi sıfırlar. Production smoke testi 9 ücretsiz + 10. cezalı çıkışı doğruladı.
 - Canlı admin hesabı: `leongrphc@gmail.com` (`app_metadata.role=admin`). Admin oyun ayarları server-only tabloda tutuluyor ve production Worker takım havuzu, süreler, reconnect, kazanma puanı, maksimum round ve ani ölüm kurallarını maç başında buradan okuyor.
 - Production hesapları `#5C6A0B` ve `#7A51C3` arasında arkadaş isteği, kabul ve iki yönlü listeleme canlı doğrulandı. Arkadaş/lig/kozmetik sekmeleri her odaklanmada yenileniyor; sosyal ve kozmetik RPC hataları artık sessizce yutulmuyor.
 

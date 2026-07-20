@@ -89,6 +89,8 @@ export default function Lobby() {
   }, []));
   const openAccountMenu = () => Alert.alert(profile?.displayName ?? tr.nav.account, profile ? `#${profile.playerCode}` : undefined, [
     { text: tr.report.cancel, style: "cancel" },
+    { text: tr.profile.open, onPress: () => router.push("/profile" as never) },
+    { text: tr.achievements.menu, onPress: () => router.push("/achievements" as never) },
     {
       text: audioPrefs.sfxEnabled ? tr.audio.sfxOn : tr.audio.sfxOff,
       onPress: () => {
@@ -187,6 +189,7 @@ export default function Lobby() {
     else if (kind === "ranked") setRankedBusy(false);
     else if (kind === "event") setEventBusy(false);
     else setQuickBusy(false);
+    setQueueNote(undefined);
     const { data } = await supabase.auth.getSession();
     const token = data.session?.access_token;
     if (!token) return;
@@ -214,14 +217,14 @@ export default function Lobby() {
         <View style={styles.topbarActions}>
           <CoinPill amount={profile?.coins ?? 0} />
           <DollarPill amount={profile?.dollars ?? 0} />
-          <Pressable accessibilityRole="button" accessibilityLabel={tr.nav.account} onPress={openAccountMenu} style={({ pressed }) => [styles.playerChip, pressed && styles.pressed]}>
+          <Pressable accessibilityRole="button" accessibilityLabel={tr.profile.open} onPress={() => router.push("/profile" as never)} style={({ pressed }) => [styles.playerChip, pressed && styles.pressed]}>
             <View style={styles.online} />
             <View style={styles.playerText}>
               <Text numberOfLines={1} style={styles.playerName}>{profile?.displayName ?? tr.lobby.noSession}</Text>
               {!!profile && <Text numberOfLines={1} style={styles.playerCode}>#{profile.playerCode}</Text>}
             </View>
-            <Text style={styles.menuDots}>•••</Text>
           </Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel={tr.nav.account} onPress={openAccountMenu} style={({ pressed }) => [styles.menuButton, pressed && styles.pressed]}><Text style={styles.menuDots}>•••</Text></Pressable>
         </View>
       </View>
       <View style={styles.heading}><Text style={styles.kicker}>{tr.lobby.kicker}</Text><Text style={styles.title}>{tr.lobby.title}</Text><View style={styles.headingRule}><View style={styles.headingSpot} /></View></View>
@@ -302,7 +305,7 @@ export default function Lobby() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background }, keyboard: { flex: 1 }, page: { padding: 22, gap: 22, paddingBottom: 116, overflow: "hidden" }, stadiumGlow: { position: "absolute", width: 310, height: 310, borderRadius: 155, top: -190, right: -110, backgroundColor: "rgba(255,243,207,0.035)", alignItems: "center", justifyContent: "center" }, glowRing: { position: "absolute", width: 230, height: 230, borderRadius: 115, borderWidth: 1, borderColor: "rgba(255,243,207,0.07)" }, glowRingInner: { width: 145, height: 145, borderRadius: 73, borderWidth: 1, borderColor: "rgba(255,243,207,0.08)" },
-  topbar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }, topbarActions: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 7 }, brandBadge: { width: 40, height: 40, borderRadius: 12, borderWidth: 1, borderColor: colors.pitchLine, alignItems: "center", justifyContent: "center", backgroundColor: colors.surface }, brandMark: { color: colors.floodlight, fontSize: 11, fontWeight: "900", letterSpacing: 1 }, playerChip: { flexShrink: 1, flexDirection: "row", gap: 7, alignItems: "center", backgroundColor: "rgba(16,34,46,0.88)", borderWidth: 1, borderColor: colors.border, borderRadius: 16, paddingHorizontal: 10, paddingVertical: 7 }, online: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.primary }, playerText: { flexShrink: 1, gap: 1 }, playerName: { color: colors.text, fontWeight: "800", fontSize: 11 }, playerCode: { color: colors.muted, fontWeight: "700", fontSize: 9, letterSpacing: .3 }, menuDots: { color: colors.accent, fontSize: 10, fontWeight: "900", letterSpacing: 1 },
+  topbar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }, topbarActions: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 7 }, brandBadge: { width: 40, height: 40, borderRadius: 12, borderWidth: 1, borderColor: colors.pitchLine, alignItems: "center", justifyContent: "center", backgroundColor: colors.surface }, brandMark: { color: colors.floodlight, fontSize: 11, fontWeight: "900", letterSpacing: 1 }, playerChip: { flexShrink: 1, flexDirection: "row", gap: 7, alignItems: "center", backgroundColor: "rgba(16,34,46,0.88)", borderWidth: 1, borderColor: colors.border, borderRadius: 16, paddingHorizontal: 10, paddingVertical: 7 }, online: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.primary }, playerText: { flexShrink: 1, gap: 1 }, playerName: { color: colors.text, fontWeight: "800", fontSize: 11 }, playerCode: { color: colors.muted, fontWeight: "700", fontSize: 9, letterSpacing: .3 }, menuButton: { width: 34, height: 34, borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, alignItems: "center", justifyContent: "center" }, menuDots: { color: colors.accent, fontSize: 10, fontWeight: "900", letterSpacing: 1 },
   heading: { marginTop: 7 }, kicker: { color: colors.primary, fontWeight: "900", fontSize: 10, letterSpacing: 2.2 }, title: { color: colors.text, fontSize: 40, lineHeight: 43, fontWeight: "900", letterSpacing: -1.5, marginTop: 10, maxWidth: 320 }, headingRule: { height: 1, backgroundColor: colors.border, marginTop: 18, justifyContent: "center" }, headingSpot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.signal, marginLeft: 26 },
   quickCard: { backgroundColor: colors.floodlight, borderRadius: 16, minHeight: 104, flexDirection: "row", alignItems: "stretch", overflow: "hidden", shadowColor: "#000", shadowOpacity: .22, shadowRadius: 18, shadowOffset: { width: 0, height: 10 }, elevation: 7 }, signalStrip: { width: 8, backgroundColor: colors.signal }, quickContent: { flex: 1, paddingHorizontal: 17, paddingVertical: 15, justifyContent: "center" }, quickKicker: { color: colors.signal, fontSize: 9, fontWeight: "900", letterSpacing: 1.35, marginBottom: 7 }, quickTitle: { color: colors.ink, fontWeight: "900", fontSize: 20, letterSpacing: -.3 }, quickCopy: { color: colors.ink, opacity: 0.62, fontSize: 12, marginTop: 4 }, rankedCups: { color: colors.ink, opacity: 0.7, fontSize: 11, fontWeight: "800", marginTop: 6 }, quickAction: { width: 54, borderLeftWidth: 1, borderLeftColor: "rgba(8,23,32,.14)", alignItems: "center", justifyContent: "center" }, quickArrow: { color: colors.ink, fontSize: 26 }, queueNote: { color: colors.accent, fontSize: 12, fontWeight: "700", marginTop: -8 },
   blitzCard: { backgroundColor: "#1A1028", borderRadius: 16, minHeight: 104, flexDirection: "row", alignItems: "stretch", overflow: "hidden", borderWidth: 1, borderColor: "#6B4DFF" }, blitzStrip: { width: 8, backgroundColor: "#8B6CFF" }, blitzKicker: { color: "#B896FF", fontSize: 9, fontWeight: "900", letterSpacing: 1.25, marginBottom: 7 }, blitzTitle: { color: colors.floodlight, fontWeight: "900", fontSize: 20, letterSpacing: -.3 }, blitzCopy: { color: colors.muted, fontSize: 12, marginTop: 4 }, blitzCups: { color: "#B896FF", fontSize: 11, fontWeight: "800", marginTop: 6 }, blitzArrow: { color: "#B896FF", fontSize: 22 },

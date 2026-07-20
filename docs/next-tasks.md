@@ -11,8 +11,11 @@ Güncel durum matrisi: [implementation-status.md](implementation-status.md)
 5. Event Week: admin lig event, kupa yok, lobby empty/live, `/event-match` (prod `event_week_core` + `club_league_country_backfill`)
 6. Audio v1: match SFX + lobby loop + mute toggles (`expo-audio`, placeholder WAV)
 7. Üç mod: Quick/Blitz 4 zor şık, Ranked yazılı cevap; ayrı queue/kupa/ladder ve 5 Quick maçlık Ranked kilidi (`20260713290000_three_mode_ladders.sql`)
+8. Başarımlar ve profil vitrini: altı rekabetçi başarım, üç rozet seçimi ve rakip READY kartı (`20260718122859_achievements_profile_showcase.sql`)
+9. Oyuncu kariyer profili: lobi adından erişim, G/M ve kazanma oranı, form/seriler, mod karnesi, rekorlar, albüm–kulüp hafızası ve başarım vitrini (`20260718191941_player_profile_stats.sql`)
+10. Kuyruk suistimal koruması: ilk 9 gerçek iptal ücretsiz, 10 dakikada 10. iptale 45 saniye cooldown; eşleşmede sıfırlama (`MatchQueue`, production smoke geçti)
 
-Smoke: lobby tutorial kartı, bot/tutorial 3 şıklı cevap, maç emoji tray, stil odası premium unlock, control room event draft→live→end, event maç only-league pool, lobby müzik + hesap menüsü ses toggle, maç SFX (doğru/yanlış/tick/SD/bitiş/emote)
+Smoke: lobby tutorial kartı, bot/tutorial 3 şıklı cevap, maç emoji tray, stil odası premium unlock, control room event draft→live→end, event maç only-league pool, lobby müzik + hesap menüsü ses toggle, maç SFX (doğru/yanlış/tick/SD/bitiş/emote), başarım ilerlemesi + üçlü vitrin + rakip kartı
 
 Detay: [feature-roadmap.md](feature-roadmap.md)
 
@@ -21,6 +24,8 @@ Detay: [feature-roadmap.md](feature-roadmap.md)
 1. İki cihazlı Worker persistence smoke testi ve korelasyon logları
 2. Arkadaş davet deep link'i, arkadaş isteği/listesi, hazır mesaj/emoji ve rövanş akışını iki cihazda smoke test etme
 3. Quick/Blitz/Ranked queue'larını iki cihazda smoke test et; şıkların iki cihazda farklı sırasını, tek kullanımlık `choice_id` reddini, Ranked kilidini ve üç kupa deltasını doğrula
+4. Başarım migration'ı ve Worker production'da; rollback'li RPC ile bot/reconnect smoke testleri geçti. Mobil release sonrası Son Saniye, Geri Dönüş ve Kusursuz Maç hesaplamasını kontrollü maçlarla, vitrin seçimini ve rakip kartını iki cihazda doğrula
+5. Kariyer profilinin küçük/büyük Android cihazlardaki kaydırma düzenini ve lobi isim yönlendirmesini görsel smoke test et
 
 Market/yayın aşamasına ertelendi: Google ve Apple provider anahtarları, production callback allowlist ve iki mağaza hesabıyla OAuth smoke testi. Geliştirmede e-posta hesabı ve test akışları kullanılacak.
 

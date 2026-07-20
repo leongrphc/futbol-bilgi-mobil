@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { createSmokeTicket, matchSocketUrl } from "./smoke-ticket.mjs";
 
 const fixture = JSON.parse(await readFile(new URL("../../../tools/football-data-builder/exports/club_pairs.json", import.meta.url), "utf8"));
 const fixturePairs = Array.isArray(fixture) ? fixture : fixture.club_pairs;
@@ -6,13 +7,14 @@ const key = (a, b) => [a, b].sort().join(":");
 const validPairs = new Set(fixturePairs.map(pair => key(pair.club_a.slug, pair.club_b.slug)));
 const base = process.env.MATCH_URL ?? "ws://127.0.0.1:8787";
 const matchId = `resume-smoke-${Date.now()}`;
-const playerId = "resume-human";
+const playerId = process.env.MATCH_PLAYER_ID ?? "resume-human";
 let sequence = 0;
 let pool = [];
 let socket;
 let reconnecting = false;
 const send = (event_type, payload = {}) => socket.send(JSON.stringify({ protocol_version: 1, match_id: matchId, event_type, command_id: `resume-${++sequence}`, payload }));
-const openSocket = () => new WebSocket(`${base}/match/${matchId}?player=${playerId}&mode=bot`);
+const ticket = await createSmokeTicket({ playerId, matchId, base });
+const openSocket = () => new WebSocket(matchSocketUrl(base, matchId, ticket));
 
 const result = await new Promise((resolve, reject) => {
   const timer = setTimeout(() => reject(new Error("resume smoke timeout")), 45_000);

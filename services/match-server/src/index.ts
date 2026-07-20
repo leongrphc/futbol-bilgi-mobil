@@ -5,6 +5,7 @@ import { ALL_EMOTE_IDS, FREE_EMOTE_IDS, PROTOCOL_VERSION, type ClientMessage, ty
 import { applyMatchModeRules, createMatchData, loadLiveEventScope, type EventScope, type MatchData } from "./data";
 import { createMatchTicket, verifyMatchTicket, verifySupabaseAccessToken, type MatchTicketMode } from "./auth";
 import { resolveAnswerPayload, type AnswerChoice } from "./choices";
+import { isQueueAbuseStateExpired, queueCooldownRemaining, recordQueueCancellation, type QueueAbuseState } from "./queue-abuse";
 
 interface Env { MATCH_ROOM: DurableObjectNamespace<MatchRoom>; MATCH_QUEUE: DurableObjectNamespace<MatchQueue>; SUPABASE_URL: string; SUPABASE_SERVICE_ROLE_KEY: string; MATCH_TOKEN_SECRET: string }
 type Pause = { phase: MatchPhase; remainingMs: number; disconnectedPlayer: string; deadline: number };
@@ -22,16 +23,15 @@ type RegionClass = "TR" | "EU" | "OTHER";
 type QueueKind = "quick" | "blitz" | "ranked" | "event";
 type QueueEntry = { playerId: string; enqueuedAt: number; trophies: number; region: RegionClass };
 const QUEUE_TTL_MS = 120_000;
-const ABANDON_COOLDOWN_MS = 45_000;
 const cupBand = (waitMs: number) => waitMs < 15_000 ? 50 : waitMs < 45_000 ? 100 : Number.POSITIVE_INFINITY;
 const withinBand = (a: number, b: number, band: number) => Math.abs(a - b) <= band;
 const normalizeRegion = (value: unknown): RegionClass => value === "TR" || value === "EU" ? value : "OTHER";
 const normalizeQueueKind = (value: unknown): QueueKind => value === "blitz" ? "blitz" : value === "ranked" ? "ranked" : value === "event" ? "event" : "quick";
 const queueStorageKeys = (kind: QueueKind) => {
-  if (kind === "blitz") return { queueKey: "queue_blitz", assignKey: "assignments_blitz", coolKey: "cooldowns_blitz" };
-  if (kind === "ranked") return { queueKey: "queue_ranked", assignKey: "assignments_ranked", coolKey: "cooldowns_ranked" };
-  if (kind === "event") return { queueKey: "queue_event", assignKey: "assignments_event", coolKey: "cooldowns_event" };
-  return { queueKey: "queue", assignKey: "assignments", coolKey: "cooldowns" };
+  if (kind === "blitz") return { queueKey: "queue_blitz", assignKey: "assignments_blitz" };
+  if (kind === "ranked") return { queueKey: "queue_ranked", assignKey: "assignments_ranked" };
+  if (kind === "event") return { queueKey: "queue_event", assignKey: "assignments_event" };
+  return { queueKey: "queue", assignKey: "assignments" };
 };
 
 export class MatchQueue extends DurableObject<Env> {
@@ -41,28 +41,44 @@ export class MatchQueue extends DurableObject<Env> {
     if (!playerId) return Response.json({ error: "INVALID_PLAYER" }, { status: 400 });
     const kind = normalizeQueueKind(body.queue);
     const now = Date.now();
-    const { queueKey, assignKey, coolKey } = queueStorageKeys(kind);
+    const { queueKey, assignKey } = queueStorageKeys(kind);
+    const abuseKey = `queue_abuse:${playerId}`;
     const queue = ((await this.ctx.storage.get<QueueEntry[]>(queueKey)) ?? []).filter(entry => now - entry.enqueuedAt < QUEUE_TTL_MS);
     const assignments = (await this.ctx.storage.get<Record<string, string>>(assignKey)) ?? {};
-    const cooldowns = ((await this.ctx.storage.get<Record<string, number>>(coolKey)) ?? {});
-    for (const [id, until] of Object.entries(cooldowns)) if (until <= now) delete cooldowns[id];
+    let abuseState = await this.ctx.storage.get<QueueAbuseState>(abuseKey);
+    if (isQueueAbuseStateExpired(abuseState, now)) {
+      abuseState = undefined;
+      await this.ctx.storage.delete(abuseKey);
+    }
 
     if (assignments[playerId]) {
       const matchId = assignments[playerId]!;
       delete assignments[playerId];
-      await this.ctx.storage.put(assignKey, assignments);
+      await Promise.all([this.ctx.storage.put(assignKey, assignments), this.ctx.storage.delete(abuseKey)]);
       return Response.json({ status: "MATCHED", match_id: matchId, mode: kind });
     }
 
     if (body.action === "cancel") {
+      const wasQueued = queue.some(entry => entry.playerId === playerId);
       const remaining = queue.filter(entry => entry.playerId !== playerId);
-      cooldowns[playerId] = now + ABANDON_COOLDOWN_MS;
-      await Promise.all([this.ctx.storage.put(queueKey, remaining), this.ctx.storage.put(coolKey, cooldowns)]);
-      return Response.json({ status: "CANCELLED", cooldown_ms: ABANDON_COOLDOWN_MS, mode: kind });
+      if (!wasQueued) {
+        await this.ctx.storage.put(queueKey, remaining);
+        return Response.json({ status: "CANCELLED", cooldown_ms: 0, cancel_count: abuseState?.cancelCount ?? 0, mode: kind });
+      }
+      const cancellation = recordQueueCancellation(abuseState, now);
+      await Promise.all([this.ctx.storage.put(queueKey, remaining), this.ctx.storage.put(abuseKey, cancellation.state)]);
+      return Response.json({
+        status: "CANCELLED",
+        cooldown_ms: cancellation.cooldownMs,
+        cancel_count: cancellation.cancelCount,
+        remaining_before_penalty: cancellation.remainingBeforePenalty,
+        mode: kind,
+      });
     }
 
-    if ((cooldowns[playerId] ?? 0) > now) {
-      return Response.json({ status: "COOLDOWN", cooldown_ms: (cooldowns[playerId] ?? now) - now, mode: kind });
+    const cooldownMs = queueCooldownRemaining(abuseState, now);
+    if (cooldownMs > 0) {
+      return Response.json({ status: "COOLDOWN", cooldown_ms: cooldownMs, mode: kind });
     }
 
     const trophies = Number.isFinite(body.trophies) ? Math.max(0, Math.floor(Number(body.trophies))) : 0;
@@ -99,8 +115,9 @@ export class MatchQueue extends DurableObject<Env> {
     }
 
     if (bestIndex < 0) {
+      const existing = queue.find(entry => entry.playerId === playerId);
       const withoutSelf = queue.filter(entry => entry.playerId !== playerId);
-      withoutSelf.push({ playerId, enqueuedAt: now, trophies, region });
+      withoutSelf.push({ playerId, enqueuedAt: existing?.enqueuedAt ?? now, trophies, region });
       await this.ctx.storage.put(queueKey, withoutSelf);
       return Response.json({ status: "WAITING", band: selfBand === Number.POSITIVE_INFINITY ? "GLOBAL" : selfBand, region, mode: kind });
     }
@@ -109,7 +126,12 @@ export class MatchQueue extends DurableObject<Env> {
     const remaining = queue.filter((_, index) => index !== bestIndex).filter(entry => entry.playerId !== playerId);
     const matchId = `${kind}-${crypto.randomUUID()}`;
     assignments[opponent.playerId] = matchId;
-    await Promise.all([this.ctx.storage.put(queueKey, remaining), this.ctx.storage.put(assignKey, assignments), this.ctx.storage.put(coolKey, cooldowns)]);
+    await Promise.all([
+      this.ctx.storage.put(queueKey, remaining),
+      this.ctx.storage.put(assignKey, assignments),
+      this.ctx.storage.delete(abuseKey),
+      this.ctx.storage.delete(`queue_abuse:${opponent.playerId}`),
+    ]);
     return Response.json({ status: "MATCHED", match_id: matchId, mode: kind, matched_region: opponent.region === region ? region : "MIXED" });
   }
 }
@@ -421,7 +443,7 @@ export class MatchRoom extends DurableObject<Env> {
     const winReason = ranked.length >= 2 ? "FIRST_CORRECT" : ranked.length === 1 ? "ONLY_CORRECT" : "NO_CORRECT";
     // Hold reveal long enough for momentum beat; floor at 1s even if admin sets lower
     const revealMs = Math.max(1_000, this.data!.rules.revealMs);
-    if (!this.hasBot()) await this.data!.persistRound({ roomKey: this.matchId, ordinal: this.persistedRounds, suddenDeath, clubs, winnerId: result.roundWinnerId, submissions: [...engine.state.submissions.values()].map(item => ({ player_id: item.playerId, raw_answer: item.raw, normalized_answer: item.normalized, is_correct: item.correct, received_at_ms: item.receivedAt, sequence: item.sequence })), scores: engine.state.scores });
+    if (!this.hasBot()) await this.data!.persistRound({ roomKey: this.matchId, ordinal: this.persistedRounds, suddenDeath, clubs, winnerId: result.roundWinnerId, submissions: [...engine.state.submissions.values()].map(item => ({ player_id: item.playerId, raw_answer: item.raw, normalized_answer: item.normalized, is_correct: item.correct, last_second: engine.state.deadline != null && item.receivedAt <= engine.state.deadline && engine.state.deadline - item.receivedAt <= 1_000, received_at_ms: item.receivedAt, sequence: item.sequence })), scores: engine.state.scores });
     this.broadcast("REVEAL_STARTED", {
       submissions: [...engine.state.submissions.values()].map(({ playerId, raw, correct, receivedAt, sequence }) => ({ player_id: playerId, answer: raw, correct, received_at_ms: receivedAt, sequence })),
       round_winner_id: result.roundWinnerId,

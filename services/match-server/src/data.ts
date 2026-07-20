@@ -41,7 +41,7 @@ export interface MatchData {
   persistFinish(roomKey: string, winnerId: string, scores: Record<string, number>): Promise<string>;
 }
 
-export interface PersistedRound { roomKey: string; ordinal: number; suddenDeath: boolean; clubs: [string, string]; winnerId: string | null; submissions: { player_id: string; raw_answer: string; normalized_answer: string; is_correct: boolean; received_at_ms: number; sequence: number }[]; scores: Record<string, number> }
+export interface PersistedRound { roomKey: string; ordinal: number; suddenDeath: boolean; clubs: [string, string]; winnerId: string | null; submissions: { player_id: string; raw_answer: string; normalized_answer: string; is_correct: boolean; last_second: boolean; received_at_ms: number; sequence: number }[]; scores: Record<string, number> }
 
 interface Env { SUPABASE_URL: string; SUPABASE_SERVICE_ROLE_KEY: string }
 

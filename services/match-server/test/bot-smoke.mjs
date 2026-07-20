@@ -1,13 +1,18 @@
 import { readFile } from "node:fs/promises";
+import { createSmokeTicket, matchSocketUrl } from "./smoke-ticket.mjs";
 
 const fixture = JSON.parse(await readFile(new URL("../../../tools/football-data-builder/exports/club_pairs.json", import.meta.url), "utf8"));
 const fixturePairs = Array.isArray(fixture) ? fixture : fixture.club_pairs;
 const key = (a, b) => [a, b].sort().join(":");
-const answers = new Map(fixturePairs.map(pair => [key(pair.club_a.slug, pair.club_b.slug), pair.players[0]?.name]));
+const answers = new Map(fixturePairs.map(pair => [
+  key(pair.club_a.slug, pair.club_b.slug),
+  new Set(pair.players.map(player => player.name)),
+]));
 const matchId = `bot-smoke-${Date.now()}`;
 const base = process.env.MATCH_URL ?? "ws://127.0.0.1:8787";
-const playerId = "human";
-const socket = new WebSocket(`${base}/match/${matchId}?player=${playerId}&mode=bot`);
+const playerId = process.env.MATCH_PLAYER_ID ?? "human";
+const ticket = await createSmokeTicket({ playerId, matchId, base });
+const socket = new WebSocket(matchSocketUrl(base, matchId, ticket));
 let sequence = 0;
 let pool = [];
 let clubs = [];
@@ -35,9 +40,13 @@ const result = await new Promise((resolve, reject) => {
     }
     if (event.event_type === "TEAMS_REVEALED") { clubs = event.payload.club_ids; used.add(key(clubs[0], clubs[1])); }
     if (event.event_type === "ANSWER_PHASE_STARTED") {
-      const answer = answers.get(key(clubs[0], clubs[1]));
-      if (!answer) return reject(new Error(`fixture answer missing for ${clubs.join("/")}`));
-      send("ANSWER_SUBMIT", { answer });
+      const validAnswers = answers.get(key(clubs[0], clubs[1]));
+      if (!validAnswers?.size) return reject(new Error(`fixture answer missing for ${clubs.join("/")}`));
+      if (event.payload.input_mode === "CHOICE") {
+        const choice = event.payload.choices?.find(item => validAnswers.has(item.label));
+        if (!choice) return reject(new Error(`valid fixture answer missing from choices for ${clubs.join("/")}`));
+        send("ANSWER_SUBMIT", { choice_id: choice.id });
+      } else send("ANSWER_SUBMIT", { answer: validAnswers.values().next().value });
     }
     if (event.event_type === "REVEAL_STARTED") {
       rounds++;

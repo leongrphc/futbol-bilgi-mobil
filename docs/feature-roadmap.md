@@ -35,7 +35,7 @@ Eğitim: bot/tutorial 3 şıklı cevap.
 | ID | Özellik | Durum |
 |---|---|---|
 | C1 | Cup-band ±50 → ±100 → global (wait-based) | MatchQueue |
-| C2 | Abandon cancel cooldown 45s (kupa yok) | MatchQueue + lobby UI |
+| C2 | İlk 9 kuyruk iptali ücretsiz; 10 dakikada 10. iptale 45s cooldown | ✅ MatchQueue Durable state + production smoke |
 | C4 | Coarse region TR/EU preference | client locale → queue |
 | F6 | Answer paste soft-block | match answer field |
 
@@ -84,6 +84,31 @@ Kurallar: classic/blitz kupa dokunulmaz; aynı anda tek LIVE; süre admin start/
 | A3 | Lobby loop music | ✅ soft pad, focus start / blur stop |
 
 Kurallar: müzik maça girince kesilir; SFX mute haptic’i bozmaz; clip’ler placeholder WAV — prod asset sonra.
+
+## Phase 9 — Başarımlar ve profil vitrini (backend production'da)
+
+| ID | Özellik | Durum |
+|---|---|---|
+| H1 | Altı sunucu hesaplı başarım | ✅ Son Saniye, Gezgin, Yenilmez, Derbi Uzmanı, Geri Dönüş, Kusursuz Maç |
+| H2 | Üç yuvalı profil vitrini | ✅ Kazanılmış başarım FK + authenticated RPC |
+| H3 | Rakip kartında vitrin | ✅ READY aşamasında yalnızca seçilmiş rozetler |
+| H4 | TR/EN başarım ekranı | ✅ İlerleme, unvan ve askılı dolap vitrini |
+
+Kurallar: bot ve arkadaş maçları ilerleme yazmaz; istemci başarım ilerlemesi yazamaz; ödüller yalnızca unvan/rozet kimliğidir; cevap ve alias verisi açılmaz.
+
+Production doğrulama: `20260718122859_achievements_profile_showcase.sql` uygulandı; 6 başarım, 8 derbi çifti, RLS/izin matrisi, authenticated okuma, vitrin yazma ve maç değerlendirme RPC zinciri rollback'li canlı smoke testini geçti. Worker production'a dağıtıldı; imzalı biletle üç turluk bot maçı ve bağlantı kesilip devam etme smoke testleri geçti. Mobil release ve iki cihaz görsel smoke testi bekliyor.
+
+## Phase 10 — Oyuncu kariyer profili (backend production'da)
+
+| ID | Özellik | Durum |
+|---|---|---|
+| P1 | Lobi oyuncu adından profil erişimi | ✅ İsim profile, üç nokta hesap menüsüne gider |
+| P2 | Rekabetçi kariyer özeti | ✅ Maç, G/M, kazanma oranı, cevap ve tur doğruluğu |
+| P3 | Form, seri ve mod karnesi | ✅ Son 10 form, güncel/en iyi seri, Quick/Blitz/Ranked/Event dökümü |
+| P4 | Kişisel rekor ve futbol hafızası | ✅ Son saniye, tek fark, gol yemeden galibiyet, albüm ve kulüp ustalığı |
+| P5 | Başarım vitrini entegrasyonu | ✅ Profil özeti ve mevcut vitrin düzenleme ekranına geçiş |
+
+İstatistikler tek authenticated RPC çağrısında, yalnızca `auth.uid()` sahibine ait sunucu kayıtlarından hesaplanır. Ham cevap ve alias verisi döndürülmez. `20260718191941_player_profile_stats.sql` production'a uygulandı ve migration geçmişine işlendi; gerçek authenticated kullanıcıyla canlı RPC smoke testi geçti. Mobil release ve cihaz görsel smoke testi bekliyor.
 
 ## Asla (MVP / adalet)
 

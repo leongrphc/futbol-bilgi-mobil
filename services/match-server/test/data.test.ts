@@ -21,10 +21,12 @@ describe("Supabase server-only data adapter", () => {
     vi.stubGlobal("fetch",fetchMock);
     const data=await createMatchData({SUPABASE_URL:"https://example.supabase.co",SUPABASE_SERVICE_ROLE_KEY:"service-secret"});
     await data.persistStart("room-1",["11111111-1111-1111-1111-111111111111","22222222-2222-2222-2222-222222222222"],"FRIEND");
-    await data.persistRound({roomKey:"room-1",ordinal:1,suddenDeath:false,clubs:["arsenal","real"],winnerId:null,submissions:[],scores:{}});
+    await data.persistRound({roomKey:"room-1",ordinal:1,suddenDeath:false,clubs:["arsenal","real"],winnerId:null,submissions:[{player_id:"11111111-1111-1111-1111-111111111111",raw_answer:"Mesut Özil",normalized_answer:"mesut ozil",is_correct:true,last_second:true,received_at_ms:1_000,sequence:1}],scores:{}});
     await data.persistFinish("room-1","11111111-1111-1111-1111-111111111111",{});
     expect(fetchMock.mock.calls.slice(2).map(call=>String(call[0]).split("/").pop())).toEqual(["match_persist_start","match_persist_round","match_persist_finish"]);
     const startInit=fetchMock.mock.calls[2]?.[1] as RequestInit; expect(startInit.headers).toMatchObject({apikey:"service-secret"});
     expect(JSON.parse(String(startInit.body))).toMatchObject({p_room_key:"room-1",p_version_id:"version-id",p_match_mode:"FRIEND"});
+    const roundInit=fetchMock.mock.calls[3]?.[1] as RequestInit;
+    expect(JSON.parse(String(roundInit.body)).p_round_submissions[0]).toMatchObject({is_correct:true,last_second:true,normalized_answer:"mesut ozil"});
   });
 });

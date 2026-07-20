@@ -14,6 +14,18 @@ export type Database = {
   }
   public: {
     Tables: {
+      achievement_definitions: {
+        Row: { accent: string; active: boolean; code: string; description_en: string; description_tr: string; glyph: string; reward_title_en: string; reward_title_tr: string; sort_order: number; target: number; title_en: string; title_tr: string }
+        Insert: { accent: string; active?: boolean; code: string; description_en: string; description_tr: string; glyph: string; reward_title_en: string; reward_title_tr: string; sort_order: number; target: number; title_en: string; title_tr: string }
+        Update: { accent?: string; active?: boolean; code?: string; description_en?: string; description_tr?: string; glyph?: string; reward_title_en?: string; reward_title_tr?: string; sort_order?: number; target?: number; title_en?: string; title_tr?: string }
+        Relationships: []
+      }
+      achievement_derby_pairs: {
+        Row: { club_a_external: string; club_b_external: string; label: string }
+        Insert: { club_a_external: string; club_b_external: string; label: string }
+        Update: { club_a_external?: string; club_b_external?: string; label?: string }
+        Relationships: []
+      }
       club_pair_players: {
         Row: {
           club_high_id: string
@@ -485,6 +497,23 @@ export type Database = {
         }
         Relationships: []
       }
+      player_achievements: {
+        Row: { achievement_code: string; player_id: string; progress: number; unlocked_at: string | null; updated_at: string }
+        Insert: { achievement_code: string; player_id: string; progress?: number; unlocked_at?: string | null; updated_at?: string }
+        Update: { achievement_code?: string; player_id?: string; progress?: number; unlocked_at?: string | null; updated_at?: string }
+        Relationships: [
+          { foreignKeyName: "player_achievements_achievement_code_fkey"; columns: ["achievement_code"]; isOneToOne: false; referencedRelation: "achievement_definitions"; referencedColumns: ["code"] },
+          { foreignKeyName: "player_achievements_player_id_fkey"; columns: ["player_id"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
+        ]
+      }
+      player_achievement_showcase: {
+        Row: { achievement_code: string; player_id: string; slot: number; updated_at: string }
+        Insert: { achievement_code: string; player_id: string; slot: number; updated_at?: string }
+        Update: { achievement_code?: string; player_id?: string; slot?: number; updated_at?: string }
+        Relationships: [
+          { foreignKeyName: "player_achievement_showcase_player_id_achievement_code_fkey"; columns: ["player_id", "achievement_code"]; isOneToOne: false; referencedRelation: "player_achievements"; referencedColumns: ["player_id", "achievement_code"] },
+        ]
+      }
       result_reports: {
         Row: {
           created_at: string
@@ -616,6 +645,7 @@ export type Database = {
           client_command_id: string
           id: string
           is_correct: boolean
+          last_second: boolean
           normalized_answer: string
           player_id: string
           raw_answer: string
@@ -627,6 +657,7 @@ export type Database = {
           client_command_id: string
           id?: string
           is_correct: boolean
+          last_second?: boolean
           normalized_answer: string
           player_id: string
           raw_answer: string
@@ -638,6 +669,7 @@ export type Database = {
           client_command_id?: string
           id?: string
           is_correct?: boolean
+          last_second?: boolean
           normalized_answer?: string
           player_id?: string
           raw_answer?: string
@@ -733,6 +765,10 @@ export type Database = {
         Args: { p_player_id: string }
         Returns: Json
       }
+      player_profile_stats: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
+      }
       weekly_theme: {
         Args: Record<PropertyKey, never>
         Returns: Json
@@ -792,6 +828,8 @@ export type Database = {
       }
       admin_event_go_live: { Args: { p_id: string }; Returns: string }
       admin_event_end: { Args: { p_id: string }; Returns: string }
+      achievements_mine: { Args: Record<PropertyKey, never>; Returns: Json }
+      achievements_set_showcase: { Args: { p_codes: string[] }; Returns: Json }
       quests_claim: { Args: { p_quest_id: string }; Returns: number }
       quests_mine: {
         Args: Record<PropertyKey, never>
