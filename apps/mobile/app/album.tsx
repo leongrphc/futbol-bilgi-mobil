@@ -5,9 +5,11 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { BottomNav } from "@/navigation/bottom-nav";
 import { colors } from "@/theme/colors";
 import { tr } from "@/i18n";
+import { useLanguage } from "@/language/language-provider";
 import { loadAlbum, type AlbumEntry } from "@/album/api";
 
 export default function Album() {
+  useLanguage();
   const [entries, setEntries] = useState<AlbumEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();

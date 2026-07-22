@@ -2,11 +2,13 @@ import { useCallback, useMemo, useState } from "react";
 import { router, useFocusEffect } from "expo-router";
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { BottomNav } from "@/navigation/bottom-nav";
 import { colors } from "@/theme/colors";
 import { locale, tr } from "@/i18n";
 import { useAuth } from "@/auth/auth-context";
 import { loadPlayerProfileStats, type CompetitiveMode, type PlayerProfileStats } from "@/profile/api";
+import { useLanguage } from "@/language/language-provider";
 
 const modeColors: Record<CompetitiveMode, string> = {
   QUICK: colors.primary,
@@ -16,6 +18,7 @@ const modeColors: Record<CompetitiveMode, string> = {
 };
 
 export default function Profile() {
+  const { locale: activeLocale } = useLanguage();
   const { profile } = useAuth();
   const [stats, setStats] = useState<PlayerProfileStats>();
   const [loading, setLoading] = useState(true);
@@ -33,7 +36,7 @@ export default function Profile() {
   useFocusEffect(useCallback(() => { void refresh(); }, [refresh]));
 
   const displayName = stats?.profile.displayName || profile?.displayName || "Football Link";
-  const initials = useMemo(() => displayName.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]?.toLocaleUpperCase(locale)).join("") || "FL", [displayName]);
+  const initials = useMemo(() => displayName.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]?.toLocaleUpperCase(locale)).join("") || "FL", [activeLocale, displayName]);
   const memberSince = stats?.profile.createdAt ? new Intl.DateTimeFormat(locale === "tr" ? "tr-TR" : "en-GB", { month: "long", year: "numeric" }).format(new Date(stats.profile.createdAt)) : "";
 
   return (
@@ -44,7 +47,9 @@ export default function Profile() {
             <Text style={styles.back}>←</Text>
           </Pressable>
           <Text style={styles.topbarLabel}>{tr.profile.kicker}</Text>
-          <View style={styles.topbarSpacer} />
+          <Pressable accessibilityRole="button" accessibilityLabel={tr.settings.open} onPress={() => router.push("/settings" as never)} style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}>
+            <Ionicons name="options-outline" size={20} color={colors.accent} />
+          </Pressable>
         </View>
 
         {loading && !stats ? <ActivityIndicator color={colors.primary} style={styles.loader} /> : error && !stats ? (
@@ -168,7 +173,6 @@ const styles = StyleSheet.create({
   backButton: { width: 42, height: 42, borderRadius: 13, borderWidth: 1, borderColor: colors.border, alignItems: "center", justifyContent: "center", backgroundColor: colors.surface },
   back: { color: colors.text, fontSize: 25, marginTop: -2 },
   topbarLabel: { color: colors.muted, fontSize: 10, fontWeight: "900", letterSpacing: 1.8 },
-  topbarSpacer: { width: 42 },
   loader: { marginVertical: 80 },
   errorCard: { borderRadius: 16, borderWidth: 1, borderColor: colors.danger, backgroundColor: `${colors.danger}10`, padding: 18 },
   error: { color: colors.danger, fontWeight: "800", lineHeight: 20 },

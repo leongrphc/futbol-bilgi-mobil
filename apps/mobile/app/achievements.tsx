@@ -5,11 +5,13 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { BottomNav } from "@/navigation/bottom-nav";
 import { colors } from "@/theme/colors";
 import { locale, tr } from "@/i18n";
+import { useLanguage } from "@/language/language-provider";
 import { loadAchievements, saveShowcase, type Achievement, type AchievementsState } from "@/achievements/api";
 
 const emptyState: AchievementsState = { unlockedCount: 0, totalCount: 0, showcase: [], achievements: [] };
 
 export default function Achievements() {
+  useLanguage();
   const [state, setState] = useState<AchievementsState>(emptyState);
   const [selected, setSelected] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);

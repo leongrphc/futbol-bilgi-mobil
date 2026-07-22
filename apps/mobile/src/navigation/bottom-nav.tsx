@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors } from "@/theme/colors";
 import { tr } from "@/i18n";
 import { playSfx } from "@/audio/sounds";
+import { useLanguage } from "@/language/language-provider";
 
 type IconName = ComponentProps<typeof Ionicons>["name"];
 type MainRoute = "lobby" | "friends" | "competition" | "cosmetics";
@@ -34,6 +35,7 @@ function TabVisual({ meta, focused }: { meta: RouteMeta; focused: boolean }) {
 }
 
 export function StadiumTabBar({ state, navigation }: BottomTabBarProps) {
+  useLanguage();
   const insets = useSafeAreaInsets();
   return (
     <View pointerEvents="box-none" style={[styles.stage, { bottom: Math.max(insets.bottom, 8) }]}>
@@ -71,6 +73,7 @@ export function StadiumTabBar({ state, navigation }: BottomTabBarProps) {
 
 // Secondary Stack screens use the same visual dock to return to a main tab.
 export function BottomNav() {
+  useLanguage();
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
   const items: MainRoute[] = ["lobby", "friends", "competition", "cosmetics"];

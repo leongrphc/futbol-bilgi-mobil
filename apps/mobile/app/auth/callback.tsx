@@ -4,17 +4,18 @@ import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "@/auth/supabase";
 import { colors } from "@/theme/colors";
+import { tr } from "@/i18n";
 
 export default function AuthCallback() {
   const { code } = useLocalSearchParams<{ code?: string }>();
-  const [message, setMessage] = useState("Hesabın doğrulanıyor");
+  const [message, setMessage] = useState<string>(tr.auth.checking);
 
   useEffect(() => {
     let alive = true;
     const finish = async () => {
       if (code) {
         const { error } = await supabase.auth.exchangeCodeForSession(code);
-        if (error) { if (alive) setMessage("Bağlantı doğrulanamadı. Giriş ekranından tekrar dene."); return; }
+        if (error) { if (alive) setMessage(tr.auth.errors.invalidResponse); return; }
       }
       router.replace("/");
     };

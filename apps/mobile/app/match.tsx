@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { router, useLocalSearchParams } from "expo-router";
-import { AccessibilityInfo, Alert, Animated, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from "react-native";
+import { AccessibilityInfo, Alert, Animated, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import type { Club, EmoteId, QuickMessageId, ServerMessage } from "@football-link/shared";
@@ -18,6 +18,7 @@ import { badgeGlyph, defaultLoadout, getCosmeticLoadout, pitchThemes, type Cosme
 import { playSfx, preloadSounds, startSuddenDeathBed, stopLobbyMusic, stopSuddenDeathBed } from "@/audio/sounds";
 import { preloadMatchEndAd, showMatchEndAd } from "@/monetization/match-end-ad";
 import { markTutorialComplete } from "@/onboarding/tutorial";
+import { useLanguage } from "@/language/language-provider";
 
 type UiPhase = "WAITING" | "READY" | "SELECTING" | "COUNTDOWN" | "ANSWERING" | "REVEAL" | "FINISHED" | "PAUSED";
 type AnswerFeedback = "correct" | "wrong" | null;
@@ -32,8 +33,8 @@ type QuickMessageState = {
   emoteId?: EmoteId;
   styleId: string;
 };
-type ViewState = { phase: UiPhase; pool: Club[]; searchableClubs: Club[]; deadline: number | null; reveal: Record<string, unknown> | undefined; result: Record<string, unknown> | undefined; round: number; locked: boolean; teams: string[]; selectionCycle: number; scores: Record<string, number>; error: string | undefined; selectionNotice: string | undefined; rematchOfferId: string | undefined; rematchPending: boolean; lastSecond: boolean; answerFeedback: AnswerFeedback; suddenDeath: boolean; suddenDeathPulse: number; playerCards: PlayerCard[]; answerChoices: AnswerChoice[]; choiceMode: boolean; matchMode: string; winningScore: number; quickMessage: QuickMessageState | undefined };
-const initial: ViewState = { phase: "WAITING", pool: [], searchableClubs: [], deadline: null, reveal: undefined, result: undefined, round: 0, locked: false, teams: [], selectionCycle: 0, scores: {}, error: undefined, selectionNotice: undefined, rematchOfferId: undefined, rematchPending: false, lastSecond: false, answerFeedback: null, suddenDeath: false, suddenDeathPulse: 0, playerCards: [], answerChoices: [], choiceMode: false, matchMode: "FRIEND", winningScore: 3, quickMessage: undefined };
+type ViewState = { phase: UiPhase; pool: Club[]; searchableClubs: Club[]; deadline: number | null; reveal: Record<string, unknown> | undefined; result: Record<string, unknown> | undefined; round: number; locked: boolean; teams: string[]; selectionCycle: number; scores: Record<string, number>; error: string | undefined; selectionNotice: string | undefined; selectionNoticeId: string | undefined; rematchOfferId: string | undefined; rematchPending: boolean; lastSecond: boolean; answerFeedback: AnswerFeedback; suddenDeath: boolean; suddenDeathPulse: number; playerCards: PlayerCard[]; answerChoices: AnswerChoice[]; choiceMode: boolean; matchMode: string; winningScore: number; quickMessage: QuickMessageState | undefined };
+const initial: ViewState = { phase: "WAITING", pool: [], searchableClubs: [], deadline: null, reveal: undefined, result: undefined, round: 0, locked: false, teams: [], selectionCycle: 0, scores: {}, error: undefined, selectionNotice: undefined, selectionNoticeId: undefined, rematchOfferId: undefined, rematchPending: false, lastSecond: false, answerFeedback: null, suddenDeath: false, suddenDeathPulse: 0, playerCards: [], answerChoices: [], choiceMode: false, matchMode: "FRIEND", winningScore: 3, quickMessage: undefined };
 const parsePlayerCards = (value: unknown): PlayerCard[] => {
   if (!Array.isArray(value)) return [];
   return value.flatMap(item => {
@@ -71,13 +72,11 @@ const parseAnswerChoices = (value: unknown): AnswerChoice[] => {
     return typeof row.id === "string" && typeof row.label === "string" && row.label.trim() ? [{ id: row.id, label: row.label }] : [];
   });
 };
-const phaseLabels: Record<UiPhase, string> = tr.match.phases;
-const errorLabels: Record<string, string> = tr.match.errors;
-const clubSearchText = locale === "tr" ? { a11y: "Takım ara", placeholder: "Takım adını yaz…", choose: "SEÇ", notFound: "Bu adla seçilebilir bir takım bulunamadı.", suggestions: "6 RASTGELE ÖNERİ" } : { a11y: "Search clubs", placeholder: "Enter a club name…", choose: "PICK", notFound: "No selectable club matches this name.", suggestions: "6 RANDOM PICKS" };
 const friendlyError = (code: unknown) => {
   const value = String(code ?? "UNKNOWN");
   if (value === "EMOTE_COOLDOWN") return tr.effects.cooldown;
   if (value === "EMOTE_NOT_OWNED" || value === "INVALID_EMOTE") return tr.emotes.notOwned;
+  const errorLabels = tr.match.errors as Record<string, string>;
   return errorLabels[value] ?? (value.startsWith("INVALID_PHASE") ? errorLabels.INVALID_PHASE! : tr.match.errors.fallback);
 };
 const selectionError = (reason: unknown) => ({ SAME_CLUB: tr.selection.sameClub, PAIR_ALREADY_USED: tr.selection.usedPair, NO_COMMON_PLAYER: tr.selection.noCommonPlayer }[String(reason)] ?? tr.selection.fallback);
@@ -120,8 +119,8 @@ function reduceEvents(events: ServerMessage[]): ViewState {
       case "TEAM_POOL_CREATED": return { ...state, pool: (payload.clubs ?? []) as Club[], searchableClubs: (payload.searchable_clubs ?? payload.clubs ?? []) as Club[] };
       case "TEAM_SELECTION_STARTED": return { ...state, phase: "SELECTING", deadline: Number(payload.deadline), locked: false, lastSecond: false, answerFeedback: null, reveal: undefined, teams: [], selectionCycle: state.selectionCycle + 1, error: undefined, answerChoices: [], choiceMode: false };
       case "TEAM_SELECTION_LOCKED": return { ...state, locked: true };
-      case "TEAM_SELECTION_INVALID": return { ...state, selectionNotice: selectionError(payload.reason) };
-      case "TEAMS_REVEALED": return { ...state, teams: payload.club_ids as string[] };
+      case "TEAM_SELECTION_INVALID": return { ...state, selectionNotice: selectionError(payload.reason), selectionNoticeId: event.event_id };
+      case "TEAMS_REVEALED": return { ...state, teams: payload.club_ids as string[], selectionNotice: undefined, selectionNoticeId: undefined };
       case "SUDDEN_DEATH_STARTED": {
         const clubs = Array.isArray(payload.clubs) ? (payload.clubs as Club[]) : [];
         const clubIds = clubs.map(club => club.id).filter(Boolean);
@@ -195,6 +194,7 @@ function reduceEvents(events: ServerMessage[]): ViewState {
 }
 
 export default function Match() {
+  const { locale: activeLocale } = useLanguage();
   const { playerId = "player", matchId = "dev-room", mode, resume, tutorial, nextRoom } = useLocalSearchParams<{ playerId: string; matchId: string; mode?: string; resume?: string; tutorial?: string; nextRoom?: string }>();
   const botMode = mode === "bot";
   const blitzMode = mode === "blitz";
@@ -205,7 +205,7 @@ export default function Match() {
   const rankedKind = blitzMode ? "blitz" as const : rankedMode ? "ranked" as const : mode === "quick" ? "quick" as const : null;
   const { profile, refreshProfile } = useAuth();
   const { connected, error: connectionError, events, send } = useMatchSocket(matchId, playerId, socketMode, resume === "1");
-  const state = useMemo(() => reduceEvents(events), [events]);
+  const state = useMemo(() => reduceEvents(events), [events, activeLocale]);
   const [selected, setSelected] = useState<string>();
   const [clubQuery, setClubQuery] = useState("");
   const [chosenClubIds, setChosenClubIds] = useState<string[]>([]);
@@ -224,6 +224,7 @@ export default function Match() {
   const [trophyBefore, setTrophyBefore] = useState<number | null>(null);
   const [trophyAfter, setTrophyAfter] = useState<number | null>(null);
   const [tutorialCompletion, setTutorialCompletion] = useState<"idle" | "saving" | "complete" | "error">("idle");
+  const [selectionPopup, setSelectionPopup] = useState<string>();
   const reducedMotion = useReducedMotion();
   const stageEntrance = useRef(new Animated.Value(1)).current;
   const handledSuddenDeath = useRef(0);
@@ -231,6 +232,15 @@ export default function Match() {
   const lastTickSecond = useRef<number | null>(null);
   const finishSfxPlayed = useRef(false);
   const kickoffWhistlePlayed = useRef(false);
+  const clubSearchText = activeLocale === "tr" ? { a11y: "Takım ara", placeholder: "Takım adını yaz…", choose: "SEÇ", notFound: "Bu adla seçilebilir bir takım bulunamadı.", suggestions: "6 RASTGELE ÖNERİ" } : { a11y: "Search clubs", placeholder: "Enter a club name…", choose: "PICK", notFound: "No selectable club matches this name.", suggestions: "6 RANDOM PICKS" };
+  useEffect(() => {
+    if (!state.selectionNotice || !state.selectionNoticeId) return;
+    setSelectionPopup(state.selectionNotice);
+    AccessibilityInfo.announceForAccessibility(`${tr.selection.invalidTitle}. ${state.selectionNotice}`);
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    const timer = setTimeout(() => setSelectionPopup(undefined), 3000);
+    return () => clearTimeout(timer);
+  }, [state.selectionNoticeId]);
   useEffect(() => {
     void stopLobbyMusic();
     void preloadSounds();
@@ -515,7 +525,7 @@ export default function Match() {
 
       <View style={styles.scoreboardWrap}><View style={[styles.scoreboard, { backgroundColor: pitchTheme.surface, borderColor: state.suddenDeath ? colors.signal : pitchTheme.line }]}>
         <View style={styles.side}><View style={styles.playerIdentity}><Text numberOfLines={1} style={styles.sideName}>{tr.match.you}</Text><PlayerBadge itemId={cosmeticLoadout.badge.itemId} name={cosmeticLoadout.badge.name} accent={cosmeticLoadout.badge.accent} /></View><View><Text style={styles.score}>{playerScore}</Text><ScorePips score={playerScore} target={winTarget} reducedMotion={reducedMotion} accent={pitchTheme.accent} /></View></View>
-        <View style={styles.matchMeta}><Text style={[styles.phase, { color: state.suddenDeath ? colors.signal : (eventMode || state.matchMode === "EVENT" ? "#F4C95D" : blitzMode || state.matchMode === "BLITZ" ? "#B896FF" : pitchTheme.accent) }]}>{(eventMode || state.matchMode === "EVENT") && state.phase !== "FINISHED" ? tr.event.badge : (blitzMode || state.matchMode === "BLITZ") && state.phase !== "FINISHED" ? tr.blitz.badge : state.suddenDeath && state.phase !== "FINISHED" && state.phase !== "REVEAL" ? tr.effects.suddenDeath : phaseLabels[state.phase]}</Text><View style={[styles.midfield, { backgroundColor: pitchTheme.line }]}><View style={[styles.centerCircle, { borderColor: pitchTheme.accent, backgroundColor: pitchTheme.surface }]} /></View>{seconds !== null && <Text style={styles.timer}>{seconds}<Text style={styles.timerUnit}>{tr.match.seconds}</Text></Text>}</View>
+        <View style={styles.matchMeta}><Text style={[styles.phase, { color: state.suddenDeath ? colors.signal : (eventMode || state.matchMode === "EVENT" ? "#F4C95D" : blitzMode || state.matchMode === "BLITZ" ? "#B896FF" : pitchTheme.accent) }]}>{(eventMode || state.matchMode === "EVENT") && state.phase !== "FINISHED" ? tr.event.badge : (blitzMode || state.matchMode === "BLITZ") && state.phase !== "FINISHED" ? tr.blitz.badge : state.suddenDeath && state.phase !== "FINISHED" && state.phase !== "REVEAL" ? tr.effects.suddenDeath : tr.match.phases[state.phase]}</Text><View style={[styles.midfield, { backgroundColor: pitchTheme.line }]}><View style={[styles.centerCircle, { borderColor: pitchTheme.accent, backgroundColor: pitchTheme.surface }]} /></View>{seconds !== null && <Text style={styles.timer}>{seconds}<Text style={styles.timerUnit}>{tr.match.seconds}</Text></Text>}</View>
         <View style={[styles.side, styles.sideRight]}><Text numberOfLines={1} style={styles.sideName}>{botMode ? tr.match.bot : tr.match.opponent}</Text><View style={styles.rightScore}><Text style={styles.score}>{opponentScore}</Text><ScorePips score={opponentScore} target={winTarget} align="right" reducedMotion={reducedMotion} accent={pitchTheme.accent} /></View></View>
       </View><ChatBubble message={state.quickMessage} playerId={playerId} reducedMotion={reducedMotion} /><ConfettiBurst burstKey={confettiKey} reducedMotion={reducedMotion} /></View>
       {state.suddenDeath && !showSuddenDeath && state.phase !== "FINISHED" && <View style={styles.sdStrip}><Text style={styles.sdStripText}>{tr.effects.suddenDeath}</Text><Text style={styles.sdStripCopy}>{tr.effects.suddenDeathCopy}</Text></View>}
@@ -616,7 +626,27 @@ export default function Match() {
     </ScrollView>
     </KeyboardAvoidingView>
     {showSuddenDeath && <SuddenDeathStinger reducedMotion={reducedMotion} onDone={() => setShowSuddenDeath(false)} />}
+    <SelectionWarningModal message={selectionPopup} onDismiss={() => setSelectionPopup(undefined)} />
   </SafeAreaView>;
+}
+
+function SelectionWarningModal({ message, onDismiss }: { message: string | undefined; onDismiss: () => void }) {
+  return (
+    <Modal visible={!!message} transparent animationType="fade" statusBarTranslucent onRequestClose={onDismiss}>
+      <View style={styles.warningBackdrop}>
+        <View accessibilityRole="alert" accessibilityLiveRegion="assertive" style={styles.warningCard}>
+          <View style={styles.warningSignal} />
+          <View style={styles.warningIcon}><Text style={styles.warningIconText}>!</Text></View>
+          <Text style={styles.warningKicker}>{tr.match.referee}</Text>
+          <Text style={styles.warningTitle}>{tr.selection.invalidTitle}</Text>
+          <Text style={styles.warningMessage}>{message}</Text>
+          <Pressable accessibilityRole="button" onPress={onDismiss} style={({ pressed }) => [styles.warningButton, pressed && styles.pressed]}>
+            <Text style={styles.warningButtonText}>{tr.common.okay}</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
+  );
 }
 
 function ActionButton({ label, onPress, disabled = false, confirmed = false }: { label: string; onPress: () => void; disabled?: boolean; confirmed?: boolean }) {
@@ -957,6 +987,16 @@ function ResultPanel({ title, value, playerId, reducedMotion, momentumSeconds, s
 }
 
 const styles = StyleSheet.create({
+  warningBackdrop: { flex: 1, backgroundColor: "rgba(4,12,18,.78)", alignItems: "center", justifyContent: "center", padding: 24 },
+  warningCard: { position: "relative", width: "100%", maxWidth: 350, overflow: "hidden", borderRadius: 22, borderWidth: 1, borderColor: "rgba(255,113,108,.55)", backgroundColor: "#10222D", paddingHorizontal: 22, paddingTop: 25, paddingBottom: 20, alignItems: "center", shadowColor: "#000", shadowOpacity: .45, shadowRadius: 24, shadowOffset: { width: 0, height: 12 }, elevation: 18 },
+  warningSignal: { position: "absolute", top: 0, left: 0, right: 0, height: 5, backgroundColor: colors.danger },
+  warningIcon: { width: 48, height: 48, borderRadius: 24, borderWidth: 2, borderColor: colors.danger, backgroundColor: "rgba(255,113,108,.12)", alignItems: "center", justifyContent: "center", marginBottom: 12 },
+  warningIconText: { color: colors.danger, fontSize: 25, lineHeight: 28, fontWeight: "900" },
+  warningKicker: { color: colors.danger, fontSize: 9, fontWeight: "900", letterSpacing: 2, marginBottom: 7 },
+  warningTitle: { color: colors.text, fontSize: 23, lineHeight: 28, fontWeight: "900", letterSpacing: -.5, textAlign: "center" },
+  warningMessage: { color: colors.muted, fontSize: 14, lineHeight: 20, fontWeight: "700", textAlign: "center", marginTop: 9, marginBottom: 20 },
+  warningButton: { alignSelf: "stretch", minHeight: 48, borderRadius: 12, backgroundColor: colors.danger, alignItems: "center", justifyContent: "center" },
+  warningButtonText: { color: colors.background, fontSize: 15, fontWeight: "900" },
   confetti: { position: "absolute", left: "50%", top: "54%", width: 1, height: 1, zIndex: 12 }, confettiPiece: { position: "absolute", width: 7, height: 11, borderRadius: 2 },
   lastSecond: { backgroundColor: "rgba(244,201,93,.16)", borderWidth: 1, borderColor: colors.accent, borderRadius: 10, padding: 10, alignItems: "center" }, lastSecondText: { color: colors.accent, fontSize: 10, fontWeight: "900", letterSpacing: 1.2 },
   wrongBanner: { backgroundColor: "rgba(232,93,93,.16)", borderWidth: 1, borderColor: colors.danger, borderRadius: 10, padding: 10, alignItems: "center" }, wrongBannerText: { color: colors.danger, fontSize: 10, fontWeight: "900", letterSpacing: 1.2 },

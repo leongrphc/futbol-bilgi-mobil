@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ClientEventType, ServerMessage } from "@football-link/shared";
 import { supabase } from "@/auth/supabase";
+import { tr } from "@/i18n";
+import { useLanguage } from "@/language/language-provider";
 
 function httpUrl(webSocketUrl: string) {
   return webSocketUrl.replace(/^wss:/, "https:").replace(/^ws:/, "http:");
 }
 
 export function useMatchSocket(matchId: string, playerId: string, mode?: "bot" | "quick" | "blitz" | "ranked" | "event", resume = false) {
+  const { locale } = useLanguage();
   const [events, setEvents] = useState<ServerMessage[]>([]);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string>();
@@ -20,7 +23,7 @@ export function useMatchSocket(matchId: string, playerId: string, mode?: "bot" |
     const connect = async () => {
       const { data } = await supabase.auth.getSession();
       const accessToken = data.session?.access_token;
-      if (!accessToken || data.session?.user.id !== playerId) { setError("Maç için geçerli bir oturum bulunamadı."); return; }
+      if (!accessToken || data.session?.user.id !== playerId) { setError(tr.connection.noSession); return; }
       try {
         const response = await fetch(`${httpUrl(base)}/match-token`, { method: "POST", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" }, body: JSON.stringify({ match_id: matchId, mode }) });
         if (!response.ok) throw new Error("MATCH_TOKEN_FAILED");
@@ -34,10 +37,10 @@ export function useMatchSocket(matchId: string, playerId: string, mode?: "bot" |
         setError(undefined);
         if (mode === "bot" || resume || hasServerState) ws.send(JSON.stringify({ protocol_version: 1, match_id: matchId, event_type: "RECONNECT", command_id: `${playerId}-${Date.now()}-sync`, payload: {} }));
       };
-      ws.onerror = () => setError("Maç sunucusuna ulaşılamıyor. Bağlantı yeniden deneniyor.");
+      ws.onerror = () => setError(tr.connection.unreachable);
       ws.onclose = () => {
         setConnected(false);
-        if (!disposed) { setError("Bağlantı kesildi. Yeniden bağlanılıyor."); retry = setTimeout(() => { void connect(); }, 2500); }
+        if (!disposed) { setError(tr.connection.disconnected); retry = setTimeout(() => { void connect(); }, 2500); }
       };
       ws.onmessage = event => {
         hasServerState = true;
@@ -45,18 +48,18 @@ export function useMatchSocket(matchId: string, playerId: string, mode?: "bot" |
         setEvents(old => [...old.slice(-49), message]);
       };
       } catch {
-        if (!disposed) { setError("Maç bileti alınamadı. Bağlantı yeniden deneniyor."); retry = setTimeout(() => { void connect(); }, 2500); }
+        if (!disposed) { setError(tr.connection.ticketFailed); retry = setTimeout(() => { void connect(); }, 2500); }
       }
     };
     void connect();
     return () => { disposed = true; if (retry) clearTimeout(retry); ref.current?.close(); };
-  }, [matchId, mode, playerId, resume]);
+  }, [locale, matchId, mode, playerId, resume]);
 
   const send = useCallback((event_type: ClientEventType, payload: Record<string, unknown> = {}) => {
-    if (ref.current?.readyState !== WebSocket.OPEN) { setError("Bağlantı henüz hazır değil. Birkaç saniye sonra tekrar dene."); return false; }
+    if (ref.current?.readyState !== WebSocket.OPEN) { setError(tr.connection.notReady); return false; }
     ref.current.send(JSON.stringify({ protocol_version: 1, match_id: matchId, event_type, command_id: `${playerId}-${Date.now()}-${Math.random()}`, payload }));
     return true;
-  }, [matchId, playerId]);
+  }, [locale, matchId, playerId]);
 
   return { connected, error, events, last: events.at(-1), send };
 }

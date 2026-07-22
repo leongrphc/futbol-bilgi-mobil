@@ -11,8 +11,10 @@ import { DailyQuestsCard } from "@/quests/DailyQuestsCard";
 import { CoinPill, DollarPill } from "@/economy/CoinPill";
 import { getAudioPrefsSync, loadAudioPrefs, setMusicEnabled, setSfxEnabled, subscribeAudioPrefs, type AudioPrefs } from "@/audio/preferences";
 import { playSfx, startLobbyMusic } from "@/audio/sounds";
+import { useLanguage } from "@/language/language-provider";
 
 export default function Lobby() {
+  useLanguage();
   const { room: invitedRoom } = useLocalSearchParams<{ room?: string }>();
   const { profile, loading, signOut } = useAuth();
   const playerId = profile?.id ?? "";
@@ -91,6 +93,7 @@ export default function Lobby() {
     { text: tr.report.cancel, style: "cancel" },
     { text: tr.profile.open, onPress: () => router.push("/profile" as never) },
     { text: tr.achievements.menu, onPress: () => router.push("/achievements" as never) },
+    { text: tr.settings.open, onPress: () => router.push("/settings" as never) },
     {
       text: audioPrefs.sfxEnabled ? tr.audio.sfxOn : tr.audio.sfxOff,
       onPress: () => {

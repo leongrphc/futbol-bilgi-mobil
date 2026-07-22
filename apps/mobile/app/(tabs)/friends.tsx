@@ -5,6 +5,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "@/auth/supabase";
 import { useAuth } from "@/auth/auth-context";
 import { tr } from "@/i18n";
+import { useLanguage } from "@/language/language-provider";
 import { colors } from "@/theme/colors";
 
 type Friend = { friend_id: string; display_name: string; player_code: string; trophies: number; status: "PENDING" | "ACCEPTED"; direction: "INCOMING" | "OUTGOING"; created_at: string };
@@ -17,6 +18,7 @@ function friendError(error: unknown) {
 }
 
 export default function Friends() {
+  useLanguage();
   const { profile } = useAuth();
   const [friends, setFriends] = useState<Friend[]>([]);
   const [code, setCode] = useState("");

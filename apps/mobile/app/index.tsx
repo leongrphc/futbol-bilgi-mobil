@@ -9,6 +9,7 @@ import { getActiveMatch, type ActiveMatch } from "@/match/active-match";
 import { supabase } from "@/auth/supabase";
 import { useAuth } from "@/auth/auth-context";
 import { tr } from "@/i18n";
+import { useLanguage } from "@/language/language-provider";
 
 type FormMode = "sign-in" | "sign-up";
 
@@ -21,6 +22,7 @@ function messageFor(error: unknown) {
 }
 
 export default function Login() {
+  const { locale } = useLanguage();
   const { room: invitedRoom } = useLocalSearchParams<{ room?: string }>();
   const { session, profile, loading: authLoading } = useAuth();
   const [mode, setMode] = useState<FormMode>("sign-in");
@@ -135,7 +137,12 @@ export default function Login() {
         automaticallyAdjustKeyboardInsets={false}
       >
         <View style={styles.brand}>
-          <Text style={styles.kicker}>{tr.auth.kicker}</Text>
+          <View style={styles.brandTop}>
+            <Text style={styles.kicker}>{tr.auth.kicker}</Text>
+            <Pressable accessibilityRole="button" accessibilityLabel={tr.settings.open} onPress={() => router.push("/settings" as never)} style={({ pressed }) => [styles.languageShortcut, pressed && styles.pressed]}>
+              <Text style={styles.languageShortcutText}>{locale.toUpperCase()} · TR/EN</Text>
+            </Pressable>
+          </View>
           <Text style={styles.title}>{tr.auth.title}{"\n"}<Text style={styles.titleAccent}>{tr.auth.titleAccent}</Text></Text>
           <View style={styles.pitchLine}><View style={styles.centerSpot} /></View>
           <Text style={styles.lead}>{session ? tr.auth.welcome(profile?.displayName ?? tr.common.player) : tr.auth.lead}</Text>
@@ -164,7 +171,7 @@ export default function Login() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background }, keyboard: { flex: 1 }, loading: { flex: 1, backgroundColor: colors.background, alignItems: "center", justifyContent: "center", gap: 14 }, loadingText: { color: colors.muted, fontWeight: "700" }, page: { flexGrow: 1, padding: 24, justifyContent: "space-between", gap: 28 },
-  brand: { paddingTop: 24 }, kicker: { color: colors.primary, fontSize: 11, fontWeight: "900", letterSpacing: 1.7 }, title: { color: colors.text, fontSize: 45, lineHeight: 49, fontWeight: "900", letterSpacing: -1.8, marginTop: 16 }, titleAccent: { color: colors.accent }, pitchLine: { height: 1, backgroundColor: colors.pitchLine, marginVertical: 23, alignItems: "center", justifyContent: "center" }, centerSpot: { width: 11, height: 11, borderRadius: 6, borderWidth: 2, borderColor: colors.primary, backgroundColor: colors.background }, lead: { color: colors.muted, fontSize: 16, lineHeight: 23, maxWidth: 330 },
+  brand: { paddingTop: 24 }, brandTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 }, kicker: { flex: 1, color: colors.primary, fontSize: 11, fontWeight: "900", letterSpacing: 1.7 }, languageShortcut: { minHeight: 36, borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, paddingHorizontal: 11, alignItems: "center", justifyContent: "center" }, languageShortcutText: { color: colors.accent, fontSize: 9, fontWeight: "900", letterSpacing: .8 }, title: { color: colors.text, fontSize: 45, lineHeight: 49, fontWeight: "900", letterSpacing: -1.8, marginTop: 16 }, titleAccent: { color: colors.accent }, pitchLine: { height: 1, backgroundColor: colors.pitchLine, marginVertical: 23, alignItems: "center", justifyContent: "center" }, centerSpot: { width: 11, height: 11, borderRadius: 6, borderWidth: 2, borderColor: colors.primary, backgroundColor: colors.background }, lead: { color: colors.muted, fontSize: 16, lineHeight: 23, maxWidth: 330 },
   form: { gap: 10, paddingBottom: 10, marginBottom: 10 }, tabs: { flexDirection: "row", padding: 4, borderRadius: 12, backgroundColor: colors.surface, marginBottom: 4 }, tab: { flex: 1, paddingVertical: 11, alignItems: "center", borderRadius: 9 }, tabActive: { backgroundColor: colors.surfaceElevated }, tabText: { color: colors.muted, fontWeight: "800" }, tabTextActive: { color: colors.text }, input: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, color: colors.text, paddingHorizontal: 16, paddingVertical: 14, borderRadius: 11, fontSize: 16 },
   button: { marginTop: 3, backgroundColor: colors.primary, minHeight: 54, borderRadius: 11, paddingHorizontal: 17, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, buttonText: { color: colors.background, fontSize: 16, fontWeight: "900" }, arrow: { color: colors.background, fontSize: 23 }, error: { color: colors.danger, fontSize: 13, lineHeight: 18 }, notice: { color: colors.primary, fontSize: 13, lineHeight: 18 }, socialDivider: { flexDirection: "row", alignItems: "center", gap: 11, marginVertical: 5 }, rule: { height: 1, backgroundColor: colors.border, flex: 1 }, or: { color: colors.muted, fontSize: 9, fontWeight: "900", letterSpacing: 1.2 }, socialRow: { flexDirection: "row", gap: 10 }, socialButton: { flex: 1, minHeight: 49, borderRadius: 11, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 9 }, socialMark: { color: colors.accent, fontWeight: "900", fontSize: 15 }, socialText: { color: colors.text, fontWeight: "800" },
   signedIn: { gap: 12, paddingBottom: 12 }, profileCard: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 14, padding: 17, flexDirection: "row", justifyContent: "space-between", alignItems: "center" }, profileName: { color: colors.text, fontSize: 20, fontWeight: "900" }, profileCode: { color: colors.muted, marginTop: 5, fontWeight: "700", fontSize: 12 }, statusDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.primary }, resumeCard: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.accent, borderRadius: 14, padding: 16, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, resumeKicker: { color: colors.accent, fontSize: 9, fontWeight: "900", letterSpacing: 1.2 }, resumeTitle: { color: colors.text, fontSize: 17, fontWeight: "900", marginTop: 5 }, resumeArrow: { color: colors.accent, fontSize: 24 }, pressed: { opacity: 0.82, transform: [{ scale: 0.99 }] }, disabled: { opacity: 0.45 },

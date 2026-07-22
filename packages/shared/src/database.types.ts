@@ -465,6 +465,7 @@ export type Database = {
           display_name: string
           id: string
           player_code: string
+          preferred_locale: string | null
           ranked_trophies: number
           tutorial_completed_at: string | null
           trophies: number
@@ -478,6 +479,7 @@ export type Database = {
           display_name?: string
           id: string
           player_code: string
+          preferred_locale?: string | null
           ranked_trophies?: number
           tutorial_completed_at?: string | null
           trophies?: number
@@ -491,6 +493,7 @@ export type Database = {
           display_name?: string
           id?: string
           player_code?: string
+          preferred_locale?: string | null
           ranked_trophies?: number
           tutorial_completed_at?: string | null
           trophies?: number

@@ -5,6 +5,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "@/auth/supabase";
 import { colors } from "@/theme/colors";
 import { tr } from "@/i18n";
+import { useLanguage } from "@/language/language-provider";
 import { setChatStyle, type ChatStyleId } from "@/cosmetics/chat-style";
 import { badgeGlyph, pitchThemes } from "@/cosmetics/loadout";
 import { useAuth } from "@/auth/auth-context";
@@ -33,6 +34,7 @@ const categories: { kind: Kind; icon: string; label: () => string; note: () => s
 ];
 
 export default function Cosmetics() {
+  useLanguage();
   const { profile, refreshProfile } = useAuth();
   const [items, setItems] = useState<Cosmetic[]>([]);
   const [activeKind, setActiveKind] = useState<Kind>("EMOTE");

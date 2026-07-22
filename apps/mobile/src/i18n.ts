@@ -1,6 +1,6 @@
 const dictionaries = {
   tr: {
-    common: { signIn: "Giriş yap", signUp: "Hesap aç", player: "oyuncu", trophies: "kupa", quickTrophies: "Hızlı Maç kupası", blitzTrophies: "Blitz kupası", rankedTrophies: "Dereceli kupa", chatStyle: "SOHBET BALONU", emotes: "EMOJİLER", coins: "COIN", dollars: "DOLAR", coinBalance: (n: number) => `${n} coin`, dollarBalance: (n: number) => `${n} dolar` },
+    common: { signIn: "Giriş yap", signUp: "Hesap aç", player: "oyuncu", trophies: "kupa", quickTrophies: "Hızlı Maç kupası", blitzTrophies: "Blitz kupası", rankedTrophies: "Dereceli kupa", chatStyle: "SOHBET BALONU", emotes: "EMOJİLER", coins: "COIN", dollars: "DOLAR", okay: "Tamam", coinBalance: (n: number) => `${n} coin`, dollarBalance: (n: number) => `${n} dolar` },
     nav: { play: "Oyna", friends: "Arkadaşlar", league: "Lig", style: "Shop", account: "Hesap menüsü" },
     social: { online: "Çevrim içi", inMatch: "Maçta", offline: "Çevrim dışı", recent: "SON OYNANANLAR", remove: "Arkadaşlıktan çıkar", block: "Engelle", manage: "Arkadaşı yönet", inviteSent: "Maç daveti gönderildi" },
     effects: {
@@ -54,9 +54,10 @@ const dictionaries = {
         theyWin: "Rakibin bu turu önde kapattı.",
       },
     },
+    connection: { noSession: "Maç için geçerli bir oturum bulunamadı.", unreachable: "Maç sunucusuna ulaşılamıyor. Bağlantı yeniden deneniyor.", disconnected: "Bağlantı kesildi. Yeniden bağlanılıyor.", ticketFailed: "Maç bileti alınamadı. Bağlantı yeniden deneniyor.", notReady: "Bağlantı henüz hazır değil. Birkaç saniye sonra tekrar dene." },
     report: { action: "Maçı bildir", title: "Bu maçta ne yanlış gitti?", wrongResult: "Maç sonucu hatalı", offensiveContent: "Uygunsuz mesaj veya içerik", otherIssue: "Başka bir sorun", cancel: "Vazgeç", sent: "Bildirimin alındı. İnceleyip gerekli adımı atacağız.", failed: "Bildirim gönderilemedi. Lütfen yeniden dene." },
     rematch: { action: "Rövanş iste", pending: "Rakibinin yanıtı bekleniyor…", offerTitle: "Rövanşa var mısın?", offerCopy: "Rakibin bir maç daha oynamak istiyor.", accept: "Kabul et", decline: "Reddet", declined: "Rakibin rövanş teklifini kabul etmedi." },
-    selection: { sameClub: "İkiniz de aynı kulübü seçtiniz. Eşleşme için farklı kulüpler seçin.", usedPair: "Bu kulüp eşleşmesi bu maçta kullanıldı. Yeni bir bağlantı kurun.", noCommonPlayer: "Bu iki kulübü bağlayan bir futbolcu yok. Farklı kulüpler seçin.", fallback: "Bu seçimle tur başlatılamadı. Kulüplerini yeniden seç." },
+    selection: { invalidTitle: "Bu eşleşme olmadı", sameClub: "İkiniz de aynı kulübü seçtiniz. Eşleşme için farklı kulüpler seçin.", usedPair: "Bu kulüp eşleşmesi bu maçta kullanıldı. Yeni bir bağlantı kurun.", noCommonPlayer: "Bu iki kulübü bağlayan bir futbolcu yok. Farklı kulüpler seçin.", fallback: "Bu seçimle tur başlatılamadı. Kulüplerini yeniden seç." },
     quick: {
       action: "Hızlı Maç",
       eyebrow: "KLASİK OYUN · 4 ŞIK · 15 SANİYE",
@@ -239,9 +240,25 @@ const dictionaries = {
       musicOn: "Lobi müziği: açık",
       musicOff: "Lobi müziği: kapalı",
     },
+    settings: {
+      open: "Seçenekler",
+      back: "Maç merkezine dön",
+      kicker: "OYUN SEÇENEKLERİ",
+      title: "Oyunu kendine göre ayarla.",
+      language: "DİL SEÇİMİ",
+      languageCopy: "Menüler ve oyun içi metinler seçtiğin dilde gösterilir.",
+      turkish: "Türkçe",
+      turkishNative: "Türkçe arayüz",
+      english: "English",
+      englishNative: "English interface",
+      selected: "SEÇİLDİ",
+      saved: "Dil tercihin bu cihazda saklanır ve sonraki açılışlarda korunur.",
+      accountSaved: "Dil tercihin hesabına ve bu cihaza kaydedilir.",
+      syncFailed: "Dil bu cihazda değişti ancak hesabına kaydedilemedi. Bağlantını kontrol edip tekrar dene.",
+    },
   },
   en: {
-    common: { signIn: "Sign in", signUp: "Create account", player: "player", trophies: "trophies", quickTrophies: "Quick trophies", blitzTrophies: "Blitz trophies", rankedTrophies: "Ranked trophies", chatStyle: "CHAT BUBBLE", emotes: "EMOJIS", coins: "COINS", dollars: "DOLLARS", coinBalance: (n: number) => `${n} coins`, dollarBalance: (n: number) => `${n} dollars` },
+    common: { signIn: "Sign in", signUp: "Create account", player: "player", trophies: "trophies", quickTrophies: "Quick trophies", blitzTrophies: "Blitz trophies", rankedTrophies: "Ranked trophies", chatStyle: "CHAT BUBBLE", emotes: "EMOJIS", coins: "COINS", dollars: "DOLLARS", okay: "OK", coinBalance: (n: number) => `${n} coins`, dollarBalance: (n: number) => `${n} dollars` },
     nav: { play: "Play", friends: "Friends", league: "League", style: "Shop", account: "Account menu" },
     social: { online: "Online", inMatch: "In match", offline: "Offline", recent: "RECENT OPPONENTS", remove: "Remove friend", block: "Block", manage: "Manage friend", inviteSent: "Match invite sent" },
     effects: {
@@ -295,9 +312,10 @@ const dictionaries = {
         theyWin: "Your opponent edges this round.",
       },
     },
+    connection: { noSession: "No valid session was found for this match.", unreachable: "The match server is unavailable. Retrying the connection.", disconnected: "Connection lost. Reconnecting.", ticketFailed: "Could not get a match ticket. Retrying the connection.", notReady: "The connection is not ready yet. Try again in a few seconds." },
     report: { action: "Report match", title: "What went wrong in this match?", wrongResult: "The result is incorrect", offensiveContent: "Offensive message or content", otherIssue: "Something else", cancel: "Cancel", sent: "We received your report and will review it.", failed: "We could not send your report. Please try again." },
     rematch: { action: "Ask for a rematch", pending: "Waiting for your opponent's answer…", offerTitle: "Ready for a rematch?", offerCopy: "Your opponent wants to run it back.", accept: "Play again", decline: "Not now", declined: "Your opponent passed on the rematch." },
-    selection: { sameClub: "You both picked the same club. Choose different clubs to build a link.", usedPair: "This club pairing has already been played. Build a new link.", noCommonPlayer: "No player links the clubs you picked. Choose a different pairing.", fallback: "We could not start the round with those clubs. Make your picks again." },
+    selection: { invalidTitle: "That pairing won't work", sameClub: "You both picked the same club. Choose different clubs to build a link.", usedPair: "This club pairing has already been played. Build a new link.", noCommonPlayer: "No player links the clubs you picked. Choose a different pairing.", fallback: "We could not start the round with those clubs. Make your picks again." },
     quick: {
       action: "Quick Match",
       eyebrow: "CLASSIC PLAY · 4 CHOICES · 15 SECONDS",
@@ -480,9 +498,30 @@ const dictionaries = {
       musicOn: "Lobby music: on",
       musicOff: "Lobby music: off",
     },
+    settings: {
+      open: "Options",
+      back: "Return to Match Center",
+      kicker: "GAME OPTIONS",
+      title: "Set the game up your way.",
+      language: "LANGUAGE",
+      languageCopy: "Menus and in-game text appear in the language you choose.",
+      turkish: "Türkçe",
+      turkishNative: "Türkçe arayüz",
+      english: "English",
+      englishNative: "English interface",
+      selected: "SELECTED",
+      saved: "Your language choice is saved on this device for future sessions.",
+      accountSaved: "Your language choice is saved to your account and this device.",
+      syncFailed: "The language changed on this device but could not be saved to your account. Check your connection and try again.",
+    },
   },
 } as const;
 
 export type Locale = keyof typeof dictionaries;
-export const locale: Locale = Intl.DateTimeFormat().resolvedOptions().locale.toLowerCase().startsWith("tr") ? "tr" : "en";
-export const tr = dictionaries[locale];
+export let locale: Locale = Intl.DateTimeFormat().resolvedOptions().locale.toLowerCase().startsWith("tr") ? "tr" : "en";
+export let tr: (typeof dictionaries)[Locale] = dictionaries[locale];
+
+export function applyLocale(nextLocale: Locale): void {
+  locale = nextLocale;
+  tr = dictionaries[nextLocale];
+}

@@ -6,6 +6,7 @@ import { useAuth } from "@/auth/auth-context";
 import { supabase } from "@/auth/supabase";
 import { colors } from "@/theme/colors";
 import { tr } from "@/i18n";
+import { useLanguage } from "@/language/language-provider";
 
 type LadderTab = "quick" | "blitz" | "ranked";
 type QuickRow = { rank: number; display_name: string; player_code: string; trophies: number; is_me?: boolean };
@@ -14,6 +15,7 @@ type RankedRow = { rank: number; display_name: string; player_code: string; rank
 type History = { match_id: string; mode: string; opponent_name: string; score_for: number; score_against: number; outcome: "WIN" | "LOSS"; finished_at: string };
 
 export default function Competition() {
+  useLanguage();
   const { profile, refreshProfile } = useAuth();
   const [tab, setTab] = useState<LadderTab>("quick");
   const [quickTable, setQuickTable] = useState<QuickRow[]>([]);
