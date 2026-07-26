@@ -287,6 +287,8 @@ export type Database = {
           score_one: number
           score_two: number
           status: Database["public"]["Enums"]["match_status"]
+          trophy_delta_one: number | null
+          trophy_delta_two: number | null
           winner_id: string | null
         }
         Insert: {
@@ -301,6 +303,8 @@ export type Database = {
           score_one?: number
           score_two?: number
           status?: Database["public"]["Enums"]["match_status"]
+          trophy_delta_one?: number | null
+          trophy_delta_two?: number | null
           winner_id?: string | null
         }
         Update: {
@@ -315,6 +319,8 @@ export type Database = {
           score_one?: number
           score_two?: number
           status?: Database["public"]["Enums"]["match_status"]
+          trophy_delta_one?: number | null
+          trophy_delta_two?: number | null
           winner_id?: string | null
         }
         Relationships: [
@@ -572,10 +578,28 @@ export type Database = {
           },
         ]
       }
+      app_notifications: {
+        Row: { actor_id: string | null; created_at: string; entity_id: string | null; expires_at: string | null; id: string; match_mode: string | null; push_attempted_at: string | null; push_error: string | null; read_at: string | null; recipient_id: string; room_key: string | null; source_key: string; type: string }
+        Insert: { actor_id?: string | null; created_at?: string; entity_id?: string | null; expires_at?: string | null; id?: string; match_mode?: string | null; push_attempted_at?: string | null; push_error?: string | null; read_at?: string | null; recipient_id: string; room_key?: string | null; source_key: string; type: string }
+        Update: { actor_id?: string | null; created_at?: string; entity_id?: string | null; expires_at?: string | null; id?: string; match_mode?: string | null; push_attempted_at?: string | null; push_error?: string | null; read_at?: string | null; recipient_id?: string; room_key?: string | null; source_key?: string; type?: string }
+        Relationships: []
+      }
+      app_notification_push_receipts: {
+        Row: { checked_at: string | null; created_at: string; error_code: string | null; error_message: string | null; id: string; notification_id: string; status: string; ticket_id: string; token_id: string }
+        Insert: { checked_at?: string | null; created_at?: string; error_code?: string | null; error_message?: string | null; id?: string; notification_id: string; status?: string; ticket_id: string; token_id: string }
+        Update: { checked_at?: string | null; created_at?: string; error_code?: string | null; error_message?: string | null; id?: string; notification_id?: string; status?: string; ticket_id?: string; token_id?: string }
+        Relationships: []
+      }
+      push_device_tokens: {
+        Row: { created_at: string; disabled_at: string | null; expo_push_token: string; id: string; last_registered_at: string; locale: string; platform: string; user_id: string }
+        Insert: { created_at?: string; disabled_at?: string | null; expo_push_token: string; id?: string; last_registered_at?: string; locale?: string; platform: string; user_id: string }
+        Update: { created_at?: string; disabled_at?: string | null; expo_push_token?: string; id?: string; last_registered_at?: string; locale?: string; platform?: string; user_id?: string }
+        Relationships: []
+      }
       rematch_offers: {
-        Row: { id: string; room_key: string; requester_id: string; recipient_id: string; next_match_key: string; status: string; created_at: string; expires_at: string }
-        Insert: { id?: string; room_key: string; requester_id: string; recipient_id: string; next_match_key: string; status?: string; created_at?: string; expires_at?: string }
-        Update: { status?: string }
+        Row: { id: string; room_key: string; requester_id: string; recipient_id: string; next_match_key: string; match_mode: string; status: string; created_at: string; expires_at: string }
+        Insert: { id?: string; room_key: string; requester_id: string; recipient_id: string; next_match_key: string; match_mode?: string; status?: string; created_at?: string; expires_at?: string }
+        Update: { match_mode?: string; status?: string }
         Relationships: []
       }
       rounds: {
@@ -904,6 +928,16 @@ export type Database = {
         Returns: string
       }
       social_set_presence: { Args: { p_state: string }; Returns: undefined }
+      social_active_player_count: { Args: Record<PropertyKey, never>; Returns: number }
+      notifications_register_push_token: { Args: { p_expo_push_token: string; p_locale?: string; p_platform: string }; Returns: string }
+      notifications_unregister_push_token: { Args: { p_expo_push_token: string }; Returns: undefined }
+      notifications_inbox: {
+        Args: { p_limit?: number }
+        Returns: { action_status: string; actor_id: string | null; actor_name: string; created_at: string; entity_id: string | null; expires_at: string | null; match_mode: string | null; notification_id: string; notification_type: string; read_at: string | null; room_key: string | null }[]
+      }
+      notifications_unread_count: { Args: Record<PropertyKey, never>; Returns: number }
+      notifications_mark_read: { Args: { p_notification_id: string }; Returns: boolean }
+      notifications_mark_all_read: { Args: Record<PropertyKey, never>; Returns: number }
       social_invite_friend: { Args: { p_friend_id: string; p_room_key: string }; Returns: string }
       social_respond_invite: { Args: { p_accept: boolean; p_invite_id: string }; Returns: string }
       social_remove_friend: { Args: { p_friend_id: string }; Returns: undefined }
@@ -913,7 +947,7 @@ export type Database = {
       social_pending_invites: { Args: Record<PropertyKey, never>; Returns: { expires_at: string; invite_id: string; room_key: string; sender_id: string; sender_name: string; status: string }[] }
       competition_my_history: {
         Args: Record<PropertyKey, never>
-        Returns: { finished_at: string; match_id: string; mode: string; opponent_name: string; outcome: string; score_against: number; score_for: number }[]
+        Returns: { finished_at: string; friend_state: string; match_id: string; mode: string; opponent_code: string; opponent_id: string; opponent_name: string; outcome: string; score_against: number; score_for: number; trophy_delta: number | null }[]
       }
       competition_leaderboard: {
         Args: Record<PropertyKey, never>

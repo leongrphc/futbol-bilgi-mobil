@@ -37,7 +37,21 @@ def test_extended_club_pool_has_more_than_100_clubs(tmp_path):
 def test_ugurcan_override_is_valid_for_trabzonspor_galatasaray(tmp_path):
     conn = make_db(tmp_path)
     result = apply_manual_overrides(conn, ROOT / "config" / "manual_overrides.json")
-    assert result == {"players": 1, "memberships": 2}
+    assert result == {"players": 3, "memberships": 2}
+    accepted_aliases = {
+        row["normalized_alias"]
+        for row in conn.execute(
+            """
+            SELECT pa.normalized_alias
+            FROM player_aliases pa
+            JOIN players p ON p.id=pa.player_id
+            WHERE p.wikidata_qid IN ('Q507815', 'Q75857')
+              AND pa.accepted=1
+            """
+        )
+    }
+    assert {"alex", "alex de souza", "sahin"} <= accepted_aliases
+    assert "nuri" not in accepted_aliases
     rebuild_pairs(conn)
     clubs = {
         row["slug"]: row["id"]

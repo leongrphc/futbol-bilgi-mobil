@@ -6,8 +6,10 @@ import { applyMatchModeRules, createMatchData, loadLiveEventScope, type EventSco
 import { createMatchTicket, verifyMatchTicket, verifySupabaseAccessToken, type MatchTicketMode } from "./auth";
 import { resolveAnswerPayload, type AnswerChoice } from "./choices";
 import { isQueueAbuseStateExpired, queueCooldownRemaining, recordQueueCancellation, type QueueAbuseState } from "./queue-abuse";
+import { rematchModeFromMatchId } from "./rematch-mode";
+import { checkPushReceipts, handleNotificationDispatch, type NotificationEnv } from "./notifications";
 
-interface Env { MATCH_ROOM: DurableObjectNamespace<MatchRoom>; MATCH_QUEUE: DurableObjectNamespace<MatchQueue>; SUPABASE_URL: string; SUPABASE_SERVICE_ROLE_KEY: string; MATCH_TOKEN_SECRET: string }
+interface Env extends NotificationEnv { MATCH_ROOM: DurableObjectNamespace<MatchRoom>; MATCH_QUEUE: DurableObjectNamespace<MatchQueue>; MATCH_TOKEN_SECRET: string }
 type Pause = { phase: MatchPhase; remainingMs: number; disconnectedPlayer: string; deadline: number };
 type CompetitiveMatchMode = "QUICK" | "BLITZ" | "RANKED";
 type RoomMatchMode = CompetitiveMatchMode | "FRIEND" | "EVENT" | "BOT";
@@ -27,6 +29,8 @@ const cupBand = (waitMs: number) => waitMs < 15_000 ? 50 : waitMs < 45_000 ? 100
 const withinBand = (a: number, b: number, band: number) => Math.abs(a - b) <= band;
 const normalizeRegion = (value: unknown): RegionClass => value === "TR" || value === "EU" ? value : "OTHER";
 const normalizeQueueKind = (value: unknown): QueueKind => value === "blitz" ? "blitz" : value === "ranked" ? "ranked" : value === "event" ? "event" : "quick";
+const ticketModeForRoom = (mode: RoomMatchMode): MatchTicketMode | undefined =>
+  mode === "QUICK" ? "quick" : mode === "BLITZ" ? "blitz" : mode === "RANKED" ? "ranked" : mode === "EVENT" ? "event" : undefined;
 const queueStorageKeys = (kind: QueueKind) => {
   if (kind === "blitz") return { queueKey: "queue_blitz", assignKey: "assignments_blitz" };
   if (kind === "ranked") return { queueKey: "queue_ranked", assignKey: "assignments_ranked" };
@@ -216,7 +220,7 @@ export class MatchRoom extends DurableObject<Env> {
       else {
         this.send(pair[1], "PLAYER_RECONNECTED", this.engine.snapshotFor(player));
         if (this.engine.state.phase === "ANSWERING" && this.isChoiceMode()) this.sendAnswerPhaseTo(player);
-        if (this.rematch) this.send(pair[1], player === this.rematch.requester ? "REMATCH_REQUESTED" : "REMATCH_OFFER", { match_id: this.rematch.matchId });
+        if (this.rematch) this.send(pair[1], player === this.rematch.requester ? "REMATCH_REQUESTED" : "REMATCH_OFFER", { match_id: this.rematch.matchId, mode: ticketModeForRoom(this.matchMode) });
       }
     }
     await this.persist(); return new Response(null, { status: 101, webSocket: pair[0] });
@@ -313,18 +317,21 @@ export class MatchRoom extends DurableObject<Env> {
         const matchId = `${this.matchId}-rematch-${Date.now().toString(36)}`;
         this.rematch = { requester: player, matchId };
         await this.persistRematchOffer(player, opponent, matchId);
-        this.sendTo(player, "REMATCH_REQUESTED", { match_id: matchId });
-        this.sendTo(opponent, "REMATCH_OFFER", { match_id: matchId });
+        const mode = ticketModeForRoom(this.matchMode);
+        this.sendTo(player, "REMATCH_REQUESTED", { match_id: matchId, mode });
+        this.sendTo(opponent, "REMATCH_OFFER", { match_id: matchId, mode });
         break;
       }
       case "REMATCH_ACCEPT": {
         if (!this.rematch || player === this.rematch.requester || engine.state.phase !== "FINISHED") throw new Error("REMATCH_UNAVAILABLE");
-        this.broadcast("REMATCH_STARTED", { match_id: this.rematch.matchId });
+        await this.updateRematchOfferStatus(this.rematch.matchId, "ACCEPTED");
+        this.broadcast("REMATCH_STARTED", { match_id: this.rematch.matchId, mode: ticketModeForRoom(this.matchMode) });
         this.rematch = null;
         break;
       }
       case "REMATCH_DECLINE": {
         if (!this.rematch || player === this.rematch.requester) throw new Error("REMATCH_UNAVAILABLE");
+        await this.updateRematchOfferStatus(this.rematch.matchId, "DECLINED");
         this.sendTo(this.rematch.requester, "REMATCH_DECLINED", {});
         this.rematch = null;
         break;
@@ -463,8 +470,21 @@ export class MatchRoom extends DurableObject<Env> {
     }
   }
   private async persistRematchOffer(requester: string, recipient: string, nextMatchKey: string): Promise<void> {
-    const response = await fetch(`${this.env.SUPABASE_URL}/rest/v1/rematch_offers`, { method: "POST", headers: { apikey: this.env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${this.env.SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" }, body: JSON.stringify({ room_key: this.matchId, requester_id: requester, recipient_id: recipient, next_match_key: nextMatchKey }) });
+    const response = await fetch(`${this.env.SUPABASE_URL}/rest/v1/rematch_offers`, { method: "POST", headers: { apikey: this.env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${this.env.SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" }, body: JSON.stringify({ room_key: this.matchId, requester_id: requester, recipient_id: recipient, next_match_key: nextMatchKey, match_mode: this.matchMode }) });
     if (!response.ok) throw new Error("REMATCH_PERSIST_FAILED");
+  }
+  private async updateRematchOfferStatus(nextMatchKey: string, status: "ACCEPTED" | "DECLINED"): Promise<void> {
+    const response = await fetch(`${this.env.SUPABASE_URL}/rest/v1/rematch_offers?room_key=eq.${encodeURIComponent(this.matchId)}&next_match_key=eq.${encodeURIComponent(nextMatchKey)}&status=eq.PENDING`, {
+      method: "PATCH",
+      headers: {
+        apikey: this.env.SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${this.env.SUPABASE_SERVICE_ROLE_KEY}`,
+        "Content-Type": "application/json",
+        Prefer: "return=minimal",
+      },
+      body: JSON.stringify({ status }),
+    });
+    if (!response.ok) throw new Error("REMATCH_STATUS_UPDATE_FAILED");
   }
 
   private async resume(_player: string): Promise<void> { const pause = this.pause!; this.pause = null; this.engine!.state.phase = pause.phase; this.engine!.state.deadline = Date.now() + pause.remainingMs; for (const player of this.engine!.state.players) { this.sendTo(player, "PLAYER_RECONNECTED", this.engine!.snapshotFor(player)); if (pause.phase === "ANSWERING" && this.isChoiceMode() && player !== BOT_PLAYER_ID) this.sendAnswerPhaseTo(player); } if (pause.remainingMs > 0) await this.ctx.storage.setAlarm(this.engine!.state.deadline); else await this.alarm(); }
@@ -546,6 +566,9 @@ const corsHeaders = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-
 export default { async fetch(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
+  if (url.pathname === "/notification-dispatch" && request.method === "POST") {
+    return handleNotificationDispatch(request, env);
+  }
   if (url.pathname === "/match-token" && request.method === "POST") {
     try {
       const bearer = request.headers.get("Authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
@@ -554,8 +577,9 @@ export default { async fetch(request: Request, env: Env): Promise<Response> {
       const body = await request.json<{ match_id?: string; mode?: string }>();
       const matchId = body.match_id?.trim();
       if (!matchId || matchId.length > 100) return Response.json({ error: "INVALID_MATCH_ID" }, { status: 400, headers: corsHeaders });
-      const mode: MatchTicketMode | undefined =
+      const requestedMode: MatchTicketMode | undefined =
         body.mode === "bot" || body.mode === "quick" || body.mode === "blitz" || body.mode === "ranked" || body.mode === "event" ? body.mode : undefined;
+      const mode = rematchModeFromMatchId(matchId) ?? requestedMode;
       const token = await createMatchTicket({ playerId, matchId, mode }, env.MATCH_TOKEN_SECRET);
       return Response.json({ token, expires_in: 60 }, { headers: corsHeaders });
     } catch { return Response.json({ error: "UNAUTHORIZED" }, { status: 401, headers: corsHeaders }); }
@@ -612,4 +636,6 @@ export default { async fetch(request: Request, env: Env): Promise<Response> {
   }
   if (!url.pathname.startsWith("/match/")) return new Response("football-link match server");
   const id = env.MATCH_ROOM.idFromName(url.pathname.split("/").pop()!); return env.MATCH_ROOM.get(id).fetch(request);
+}, async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+  ctx.waitUntil(checkPushReceipts(env));
 } };

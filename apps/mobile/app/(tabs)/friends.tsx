@@ -7,15 +7,10 @@ import { useAuth } from "@/auth/auth-context";
 import { tr } from "@/i18n";
 import { useLanguage } from "@/language/language-provider";
 import { colors } from "@/theme/colors";
+import { createFriendRoomKey, friendErrorMessage } from "@/friends/social-actions";
 
 type Friend = { friend_id: string; display_name: string; player_code: string; trophies: number; status: "PENDING" | "ACCEPTED"; direction: "INCOMING" | "OUTGOING"; created_at: string };
 type Recent = { player_id: string; display_name: string; player_code: string; last_played_at: string };
-
-function friendError(error: unknown) {
-  const value = [String((error as { code?: string })?.code ?? ""), String((error as { message?: string })?.message ?? ""), String((error as { details?: string })?.details ?? "")].join(" ");
-  const code = Object.keys(tr.friends.errors).find(key => value.includes(key)) as keyof typeof tr.friends.errors | undefined;
-  return code ? tr.friends.errors[code] : tr.friends.errors.fallback;
-}
 
 export default function Friends() {
   useLanguage();
@@ -28,7 +23,7 @@ export default function Friends() {
   const [loadError, setLoadError] = useState("");
   const load = useCallback(async () => {
     const [list, states, opponents] = await Promise.all([supabase.rpc("social_list_friends"), supabase.rpc("social_friend_presence"), supabase.rpc("social_recent_opponents")]);
-    if (list.error) setLoadError(friendError(list.error)); else { setFriends((list.data ?? []) as Friend[]); setLoadError(""); }
+    if (list.error) setLoadError(friendErrorMessage(list.error)); else { setFriends((list.data ?? []) as Friend[]); setLoadError(""); }
     if (!states.error) setPresence(Object.fromEntries((states.data ?? []).map(item => [item.player_id, item.state])));
     if (!opponents.error) setRecent((opponents.data ?? []) as Recent[]);
   }, []);
@@ -40,24 +35,24 @@ export default function Friends() {
     if (normalized.length !== 6) { setBusy(false); Alert.alert(tr.friends.errors.INVALID_PLAYER_CODE); return; }
     const { data, error } = await supabase.rpc("social_request_friend", { p_player_code: normalized });
     setBusy(false);
-    if (error) { Alert.alert(friendError(error)); return; }
+    if (error) { Alert.alert(friendErrorMessage(error)); return; }
     setCode("");
     Alert.alert(data === "ACCEPTED" || data === "ALREADY_FRIENDS" ? tr.friends.accepted : tr.friends.sent);
     await load();
   };
   const respond = async (requesterId: string, accept: boolean) => {
     const { error } = await supabase.rpc("social_respond_friend", { p_requester_id: requesterId, p_accept: accept });
-    if (error) { Alert.alert(friendError(error)); return; }
+    if (error) { Alert.alert(friendErrorMessage(error)); return; }
     await load();
   };
   const invite = async (friend: Friend) => {
-    const room = globalThis.crypto?.randomUUID?.().replaceAll("-", "").slice(0, 12) ?? `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+    const room = createFriendRoomKey();
     Alert.alert(tr.friends.inviteTitle, tr.friends.inviteCopy(friend.display_name), [
       { text: tr.report.cancel, style: "cancel" },
-      { text: tr.friends.invite, onPress: () => { void supabase.rpc("social_invite_friend", { p_friend_id: friend.friend_id, p_room_key: room.toLowerCase() }).then(({ error }) => { if (error) Alert.alert(friendError(error)); else if (profile) { Alert.alert(tr.social.inviteSent); router.replace({ pathname: "/match", params: { playerId: profile.id, matchId: room.toLowerCase() } }); } }); } },
+      { text: tr.friends.invite, onPress: () => { void supabase.rpc("social_invite_friend", { p_friend_id: friend.friend_id, p_room_key: room }).then(({ error }) => { if (error) Alert.alert(friendErrorMessage(error)); else if (profile) { Alert.alert(tr.social.inviteSent); router.replace({ pathname: "/match", params: { playerId: profile.id, matchId: room } }); } }); } },
     ]);
   };
-  const manageAction = async (rpc: "social_remove_friend" | "social_block_player", friendId: string) => { const argument = rpc === "social_remove_friend" ? { p_friend_id: friendId } : { p_player_id: friendId }; const { error } = await supabase.rpc(rpc, argument); if (error) Alert.alert(friendError(error)); else await load(); };
+  const manageAction = async (rpc: "social_remove_friend" | "social_block_player", friendId: string) => { const argument = rpc === "social_remove_friend" ? { p_friend_id: friendId } : { p_player_id: friendId }; const { error } = await supabase.rpc(rpc, argument); if (error) Alert.alert(friendErrorMessage(error)); else await load(); };
   const manage = (friend: Friend) => Alert.alert(tr.social.manage, friend.display_name, [{ text: tr.report.cancel, style: "cancel" }, { text: tr.social.remove, onPress: () => { void manageAction("social_remove_friend", friend.friend_id); } }, { text: tr.social.block, style: "destructive", onPress: () => { void manageAction("social_block_player", friend.friend_id); } }]);
   const incoming = friends.filter(friend => friend.status === "PENDING" && friend.direction === "INCOMING");
   const accepted = friends.filter(friend => friend.status === "ACCEPTED");

@@ -58,6 +58,10 @@ export default function Cosmetics() {
 
   const activeCategory = categories.find(category => category.kind === activeKind)!;
   const activeItems = useMemo(() => items.filter(item => item.kind === activeKind), [activeKind, items]);
+  const featuredItem = useMemo(
+    () => activeItems.find(item => item.is_premium && !item.owned) ?? activeItems.find(item => item.is_premium),
+    [activeItems],
+  );
 
   const equip = async (item: Cosmetic) => {
     setBusyId(item.item_id);
@@ -130,9 +134,33 @@ export default function Cosmetics() {
         {loading && <ActivityIndicator color={colors.primary} style={s.loader} />}
         {loadError && !loading && <Pressable onPress={() => { void load(); }} style={s.retry}><Text style={s.retryText}>{tr.cosmetics.loadFailed}</Text></Pressable>}
         {!loading && !loadError && activeItems.length === 0 && <Text style={s.empty}>{tr.cosmetics.emptyCategory}</Text>}
-        {!loading && !loadError && <View style={s.section}>{activeItems.map(item => <ProductCard key={item.item_id} item={item} busyId={busyId} onBuy={confirmPurchase} onEquip={equip} />)}</View>}
+        {!loading && !loadError && featuredItem && <FeaturedProduct item={featuredItem} busyId={busyId} onBuy={confirmPurchase} onEquip={equip} />}
+        {!loading && !loadError && <View style={s.section}>{activeItems.filter(item => item.item_id !== featuredItem?.item_id).map(item => <ProductCard key={item.item_id} item={item} busyId={busyId} onBuy={confirmPurchase} onEquip={equip} />)}</View>}
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function FeaturedProduct({ item, busyId, onBuy, onEquip }: { item: Cosmetic; busyId?: string; onBuy: (item: Cosmetic) => void; onEquip: (item: Cosmetic) => Promise<void> }) {
+  return (
+    <View style={[s.featuredCard, { borderColor: `${item.accent}88` }]}>
+      <View pointerEvents="none" style={[s.featuredHalo, { borderColor: `${item.accent}28` }]}><View style={[s.featuredHaloInner, { borderColor: `${item.accent}36` }]} /></View>
+      <View style={s.featuredTop}>
+        <View><Text style={[s.featuredKicker, { color: item.accent }]}>{tr.cosmetics.featuredKicker}</Text><Text style={s.featuredTitle}>{tr.cosmetics.featuredTitle}</Text></View>
+        <Text style={[s.featuredPremium, { color: item.accent, borderColor: `${item.accent}66` }]}>{tr.cosmetics.special}</Text>
+      </View>
+      <View style={s.featuredBody}>
+        <View style={[s.featuredStage, { borderColor: `${item.accent}55` }]}>
+          <View style={[s.pedestalLight, { backgroundColor: `${item.accent}18` }]} />
+          <ProductPreview item={item} featured />
+        </View>
+        <View style={s.featuredInfo}>
+          <Text style={s.featuredName}>{item.name}</Text>
+          <Text style={s.featuredCopy}>{tr.cosmetics.featuredCopy}</Text>
+          <ProductAction item={item} busyId={busyId} onBuy={onBuy} onEquip={onEquip} featured />
+        </View>
+      </View>
+    </View>
   );
 }
 
@@ -140,51 +168,62 @@ function ProductCard({ item, busyId, onBuy, onEquip }: { item: Cosmetic; busyId?
   const owned = Boolean(item.owned);
   const dollar = item.price_dollars > 0;
   const price = dollar ? item.price_dollars : item.price_coins;
-  const busy = busyId === item.item_id;
   const hasMatchEffect = dollar && item.kind !== "BADGE";
   return (
     <View style={[s.card, item.equipped && owned && { borderColor: item.accent }, dollar && s.premiumCard]}>
       {dollar && <View style={s.specialRibbon}><Text style={s.specialText}>{tr.cosmetics.special}</Text></View>}
-      {item.kind === "EMOTE"
-        ? <View style={[s.emotePreview, { borderColor: item.accent }]}><Text style={s.emoteGlyph}>{item.glyph || "•"}</Text></View>
-        : item.kind === "CHAT_STYLE"
-          ? <View style={[s.chatPreview, { borderColor: item.accent }]}><Text style={[s.chatPreviewText, { color: item.accent }]}>Aa</Text></View>
-          : item.kind === "PITCH_THEME"
-            ? <PitchPreview itemId={item.item_id} accent={item.accent} />
-            : <BadgePreview itemId={item.item_id} accent={item.accent} />}
+      <View style={[s.previewStage, { borderColor: `${item.accent}42` }]}>
+        <View pointerEvents="none" style={[s.previewGlow, { backgroundColor: `${item.accent}14` }]} />
+        <ProductPreview item={item} />
+      </View>
       <View style={s.info}>
-        <Text style={s.name}>{item.name}</Text>
+        <Text style={[s.productEyebrow, { color: item.accent }]}>{tr.cosmetics.collectionPiece}</Text>
+        <Text numberOfLines={2} style={s.name}>{item.name}</Text>
         {hasMatchEffect && <View style={s.effectTag}><Text style={s.effectTagSpark}>✦</Text><Text style={s.effectTagText}>{tr.cosmetics.matchEffect}</Text></View>}
         <View style={s.productMeta}>
           <Price currency={dollar ? "DOLLAR" : "COIN"} amount={price} />
           {owned && <Text style={s.owned}>{item.equipped ? tr.cosmetics.equipped : tr.cosmetics.owned}</Text>}
         </View>
       </View>
-      {!owned ? (
-        <Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busyId) }} disabled={Boolean(busyId)} onPress={() => onBuy(item)} style={[s.buyButton, dollar && s.dollarButton, Boolean(busyId) && s.disabled]}>
-          {busy ? <ActivityIndicator size="small" color={dollar ? "#C9ECFF" : "#FFE49A"} /> : <><Text style={[s.buyCurrency, dollar && s.buyCurrencyDollar]}>{dollar ? "$" : "C"}</Text><Text style={[s.buyPrice, dollar && s.buyPriceDollar]}>{price}</Text></>}
-        </Pressable>
-      ) : item.kind === "EMOTE" ? (
-        <View style={[s.actionButton, s.on]}><Text style={s.onText}>✓</Text></View>
-      ) : (
-        <Pressable accessibilityRole="button" accessibilityState={{ selected: item.equipped, disabled: item.equipped || Boolean(busyId) }} disabled={item.equipped || Boolean(busyId)} onPress={() => { void onEquip(item); }} style={[s.actionButton, item.equipped && s.on, Boolean(busyId) && s.disabled]}>
-          <Text style={[s.actionText, item.equipped && s.onText]}>{busy ? "…" : item.equipped ? "✓" : tr.cosmetics.equip}</Text>
-        </Pressable>
-      )}
+      <ProductAction item={item} busyId={busyId} onBuy={onBuy} onEquip={onEquip} />
     </View>
   );
+}
+
+function ProductAction({ item, busyId, onBuy, onEquip, featured = false }: { item: Cosmetic; busyId?: string; onBuy: (item: Cosmetic) => void; onEquip: (item: Cosmetic) => Promise<void>; featured?: boolean }) {
+  const owned = Boolean(item.owned);
+  const dollar = item.price_dollars > 0;
+  const price = dollar ? item.price_dollars : item.price_coins;
+  const busy = busyId === item.item_id;
+  if (!owned) {
+    return <Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busyId) }} disabled={Boolean(busyId)} onPress={() => onBuy(item)} style={[s.buyButton, dollar && s.dollarButton, featured && s.featuredAction, Boolean(busyId) && s.disabled]}>
+      {busy ? <ActivityIndicator size="small" color={dollar ? "#C9ECFF" : "#FFE49A"} /> : <><Text style={[s.buyCurrency, dollar && s.buyCurrencyDollar]}>{dollar ? "$" : "C"}</Text><Text style={[s.buyPrice, dollar && s.buyPriceDollar]}>{price}</Text><Text style={[s.buyLabel, dollar && s.buyLabelDollar]}>{tr.cosmetics.buy}</Text></>}
+    </Pressable>;
+  }
+  if (item.kind === "EMOTE") return <View style={[s.actionButton, s.on, featured && s.featuredAction]}><Text style={s.collectionOwned}>{tr.cosmetics.owned}</Text><Text style={s.onText}>✓</Text></View>;
+  return <Pressable accessibilityRole="button" accessibilityState={{ selected: item.equipped, disabled: item.equipped || Boolean(busyId) }} disabled={item.equipped || Boolean(busyId)} onPress={() => { void onEquip(item); }} style={[s.actionButton, item.equipped && s.on, featured && s.featuredAction, Boolean(busyId) && s.disabled]}>
+    <Text style={[s.actionText, item.equipped && s.collectionOwned]}>{busy ? "…" : item.equipped ? tr.cosmetics.equipped : tr.cosmetics.equip}</Text>
+    {item.equipped && <Text style={s.onText}>✓</Text>}
+  </Pressable>;
+}
+
+function ProductPreview({ item, featured = false }: { item: Cosmetic; featured?: boolean }) {
+  if (item.kind === "EMOTE") return <View style={[s.emotePreview, featured && s.emotePreviewFeatured, { borderColor: item.accent }]}><Text style={[s.emoteGlyph, featured && s.emoteGlyphFeatured]}>{item.glyph || "•"}</Text></View>;
+  if (item.kind === "CHAT_STYLE") return <View style={[s.chatPreview, featured && s.chatPreviewFeatured, { borderColor: item.accent }]}><Text style={[s.chatPreviewText, featured && s.chatPreviewTextFeatured, { color: item.accent }]}>Aa</Text></View>;
+  if (item.kind === "PITCH_THEME") return <PitchPreview itemId={item.item_id} accent={item.accent} featured={featured} />;
+  return <BadgePreview itemId={item.item_id} accent={item.accent} featured={featured} />;
 }
 
 function Price({ currency, amount }: { currency: "COIN" | "DOLLAR"; amount: number }) {
   const dollar = currency === "DOLLAR";
   return <View style={[s.priceChip, dollar && s.priceChipDollar]}><Text style={[s.priceMark, dollar && s.priceMarkDollar]}>{dollar ? "$" : "C"}</Text><Text style={[s.priceAmount, dollar && s.priceAmountDollar]}>{amount}</Text></View>;
 }
-function PitchPreview({ itemId, accent }: { itemId: string; accent: string }) {
+function PitchPreview({ itemId, accent, featured = false }: { itemId: string; accent: string; featured?: boolean }) {
   const theme = pitchThemes[itemId] ?? pitchThemes["pitch-classic"]!;
-  return <View style={[s.pitchPreview, { backgroundColor: theme.surface, borderColor: accent }]}><View style={[s.pitchHalf, { backgroundColor: theme.line }]} /><View style={[s.pitchCircle, { borderColor: theme.line }]} /></View>;
+  return <View style={[s.pitchPreview, featured && s.pitchPreviewFeatured, { backgroundColor: theme.surface, borderColor: accent }]}><View style={[s.pitchHalf, featured && s.pitchHalfFeatured, { backgroundColor: theme.line }]} /><View style={[s.pitchCircle, featured && s.pitchCircleFeatured, { borderColor: theme.line }]} /></View>;
 }
-function BadgePreview({ itemId, accent }: { itemId: string; accent: string }) {
-  return <View style={[s.badgePreview, { borderColor: accent, backgroundColor: `${accent}20` }]}><Text style={[s.badgeGlyph, { color: accent }]}>{badgeGlyph(itemId)}</Text></View>;
+function BadgePreview({ itemId, accent, featured = false }: { itemId: string; accent: string; featured?: boolean }) {
+  return <View style={[s.badgePreview, featured && s.badgePreviewFeatured, { borderColor: accent, backgroundColor: `${accent}20` }]}><Text style={[s.badgeGlyph, featured && s.badgeGlyphFeatured, { color: accent }]}>{badgeGlyph(itemId)}</Text></View>;
 }
 
 const s = StyleSheet.create({
@@ -222,26 +261,51 @@ const s = StyleSheet.create({
   shelfKicker: { color: colors.accent, fontSize: 10, fontWeight: "900", letterSpacing: 1.3 },
   shelfTitle: { color: colors.text, fontSize: 17, fontWeight: "900", marginTop: 5, maxWidth: 280 },
   shelfNumber: { color: colors.border, fontSize: 35, lineHeight: 35, fontWeight: "900", letterSpacing: -1 },
-  section: { gap: 9 },
-  card: { position: "relative", flexDirection: "row", alignItems: "center", gap: 11, borderWidth: 1, borderColor: colors.border, borderRadius: 14, padding: 12, backgroundColor: colors.surface, overflow: "hidden" },
+  featuredCard: { position: "relative", overflow: "hidden", borderRadius: 22, borderWidth: 1, backgroundColor: "#0B1B27", padding: 17, gap: 16, shadowColor: "#000", shadowOpacity: .32, shadowRadius: 20, shadowOffset: { width: 0, height: 12 }, elevation: 9 },
+  featuredHalo: { position: "absolute", width: 250, height: 250, borderRadius: 125, borderWidth: 1, right: -100, top: -118, alignItems: "center", justifyContent: "center" },
+  featuredHaloInner: { width: 148, height: 148, borderRadius: 74, borderWidth: 1 },
+  featuredTop: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 12 },
+  featuredKicker: { fontSize: 9, fontWeight: "900", letterSpacing: 1.6 },
+  featuredTitle: { color: colors.text, fontSize: 19, lineHeight: 23, fontWeight: "900", marginTop: 5, maxWidth: 240 },
+  featuredPremium: { overflow: "hidden", borderRadius: 999, borderWidth: 1, paddingHorizontal: 9, paddingVertical: 5, fontSize: 7, fontWeight: "900", letterSpacing: .8 },
+  featuredBody: { flexDirection: "row", alignItems: "stretch", gap: 14 },
+  featuredStage: { position: "relative", overflow: "hidden", width: 124, minHeight: 142, borderRadius: 17, borderWidth: 1, backgroundColor: "#07131D", alignItems: "center", justifyContent: "center" },
+  pedestalLight: { position: "absolute", width: 116, height: 116, borderRadius: 58, bottom: -42 },
+  featuredInfo: { flex: 1, justifyContent: "center", gap: 9 },
+  featuredName: { color: colors.text, fontSize: 20, lineHeight: 23, fontWeight: "900", letterSpacing: -.35 },
+  featuredCopy: { color: colors.muted, fontSize: 11, lineHeight: 16 },
+  section: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  card: { position: "relative", width: "48.5%", minHeight: 285, gap: 10, borderWidth: 1, borderColor: colors.border, borderRadius: 17, padding: 11, backgroundColor: colors.surface, overflow: "hidden" },
   premiumCard: { borderColor: "rgba(114,199,255,.48)", backgroundColor: "#102431" },
-  specialRibbon: { position: "absolute", right: -23, top: 7, width: 78, alignItems: "center", backgroundColor: "#72C7FF", transform: [{ rotate: "34deg" }], paddingVertical: 2 },
-  specialText: { color: "#153E58", fontSize: 6, fontWeight: "900", letterSpacing: .7 },
-  chatPreview: { height: 44, width: 50, borderRadius: 18, borderWidth: 2, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceElevated },
-  chatPreviewText: { fontWeight: "900", fontSize: 14 },
-  emotePreview: { height: 44, width: 50, borderRadius: 14, borderWidth: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceElevated },
-  emoteGlyph: { fontSize: 22 },
-  pitchPreview: { height: 44, width: 50, borderRadius: 9, borderWidth: 1, overflow: "hidden", alignItems: "center", justifyContent: "center" },
-  pitchHalf: { position: "absolute", width: 1, height: 44 },
-  pitchCircle: { width: 18, height: 18, borderRadius: 9, borderWidth: 1 },
-  badgePreview: { height: 40, width: 40, marginHorizontal: 5, borderRadius: 12, borderWidth: 1.5, alignItems: "center", justifyContent: "center", transform: [{ rotate: "45deg" }] },
-  badgeGlyph: { fontSize: 10, fontWeight: "900", transform: [{ rotate: "-45deg" }] },
-  info: { flex: 1, gap: 5 },
-  name: { color: colors.text, fontWeight: "900", paddingRight: 12 },
+  specialRibbon: { position: "absolute", zIndex: 3, right: -25, top: 9, width: 88, alignItems: "center", backgroundColor: "#72C7FF", transform: [{ rotate: "34deg" }], paddingVertical: 3 },
+  specialText: { color: "#153E58", fontSize: 6, fontWeight: "900", letterSpacing: .75 },
+  previewStage: { position: "relative", overflow: "hidden", height: 112, borderRadius: 13, borderWidth: 1, backgroundColor: "#091823", alignItems: "center", justifyContent: "center" },
+  previewGlow: { position: "absolute", width: 96, height: 96, borderRadius: 48, bottom: -44 },
+  chatPreview: { height: 62, width: 76, borderRadius: 25, borderWidth: 2, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceElevated },
+  chatPreviewFeatured: { height: 78, width: 94, borderRadius: 31 },
+  chatPreviewText: { fontWeight: "900", fontSize: 19 },
+  chatPreviewTextFeatured: { fontSize: 25 },
+  emotePreview: { height: 66, width: 72, borderRadius: 20, borderWidth: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceElevated },
+  emotePreviewFeatured: { height: 84, width: 92, borderRadius: 25 },
+  emoteGlyph: { fontSize: 34 },
+  emoteGlyphFeatured: { fontSize: 46 },
+  pitchPreview: { height: 68, width: 90, borderRadius: 13, borderWidth: 1, overflow: "hidden", alignItems: "center", justifyContent: "center" },
+  pitchPreviewFeatured: { height: 88, width: 104, borderRadius: 15 },
+  pitchHalf: { position: "absolute", width: 1, height: 68 },
+  pitchHalfFeatured: { height: 88 },
+  pitchCircle: { width: 28, height: 28, borderRadius: 14, borderWidth: 1 },
+  pitchCircleFeatured: { width: 38, height: 38, borderRadius: 19 },
+  badgePreview: { height: 58, width: 58, borderRadius: 16, borderWidth: 1.5, alignItems: "center", justifyContent: "center", transform: [{ rotate: "45deg" }] },
+  badgePreviewFeatured: { height: 76, width: 76, borderRadius: 21 },
+  badgeGlyph: { fontSize: 14, fontWeight: "900", transform: [{ rotate: "-45deg" }] },
+  badgeGlyphFeatured: { fontSize: 19 },
+  info: { flex: 1, gap: 6 },
+  productEyebrow: { fontSize: 7, fontWeight: "900", letterSpacing: .85 },
+  name: { color: colors.text, fontSize: 14, lineHeight: 17, fontWeight: "900", paddingRight: 8, minHeight: 34 },
   effectTag: { alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 4, borderRadius: 999, paddingHorizontal: 7, paddingVertical: 3, backgroundColor: "rgba(102,228,255,.10)", borderWidth: 1, borderColor: "rgba(102,228,255,.30)" },
   effectTagSpark: { color: "#66E4FF", fontSize: 8, fontWeight: "900" },
   effectTagText: { color: "#A9EFFF", fontSize: 7, fontWeight: "900", letterSpacing: .7 },
-  productMeta: { flexDirection: "row", alignItems: "center", gap: 7 },
+  productMeta: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 7 },
   priceChip: { flexDirection: "row", alignItems: "center", gap: 3 },
   priceChipDollar: {},
   priceMark: { color: "#F4C95D", fontSize: 9, fontWeight: "900" },
@@ -249,16 +313,20 @@ const s = StyleSheet.create({
   priceAmount: { color: "#D7C889", fontSize: 10, fontWeight: "900", fontVariant: ["tabular-nums"] },
   priceAmountDollar: { color: "#A9DAF4" },
   owned: { color: colors.primary, fontSize: 8, fontWeight: "900", letterSpacing: .6 },
-  buyButton: { minWidth: 58, minHeight: 38, paddingHorizontal: 10, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, borderRadius: 10, backgroundColor: "rgba(244,201,93,.12)", borderWidth: 1, borderColor: "rgba(244,201,93,.42)" },
+  buyButton: { width: "100%", minHeight: 42, paddingHorizontal: 10, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, borderRadius: 11, backgroundColor: "rgba(244,201,93,.12)", borderWidth: 1, borderColor: "rgba(244,201,93,.42)" },
   dollarButton: { backgroundColor: "rgba(114,199,255,.12)", borderColor: "rgba(114,199,255,.46)" },
+  featuredAction: { marginTop: 2 },
   buyCurrency: { color: "#F4C95D", fontSize: 10, fontWeight: "900" },
   buyCurrencyDollar: { color: "#72C7FF" },
   buyPrice: { color: "#FFE49A", fontSize: 12, fontWeight: "900", fontVariant: ["tabular-nums"] },
   buyPriceDollar: { color: "#C9ECFF" },
-  actionButton: { minWidth: 58, minHeight: 38, alignItems: "center", justifyContent: "center", paddingHorizontal: 10, borderRadius: 10, backgroundColor: colors.primary },
+  buyLabel: { color: "#FFE49A", fontSize: 8, fontWeight: "900", marginLeft: 3 },
+  buyLabelDollar: { color: "#C9ECFF" },
+  actionButton: { width: "100%", minHeight: 42, flexDirection: "row", gap: 7, alignItems: "center", justifyContent: "center", paddingHorizontal: 10, borderRadius: 11, backgroundColor: colors.primary },
   actionText: { color: colors.background, fontSize: 11, fontWeight: "900" },
   on: { backgroundColor: colors.surfaceElevated },
   onText: { color: colors.primary, fontSize: 16, fontWeight: "900" },
+  collectionOwned: { color: colors.primary, fontSize: 8, fontWeight: "900", letterSpacing: .6 },
   loader: { marginVertical: 24 },
   retry: { minHeight: 50, borderRadius: 12, borderWidth: 1, borderColor: colors.danger, alignItems: "center", justifyContent: "center" },
   retryText: { color: colors.danger, fontWeight: "800" },

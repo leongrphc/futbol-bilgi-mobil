@@ -2,6 +2,7 @@ import type { Session } from "@supabase/supabase-js";
 import { createContext, useContext, useEffect, useMemo, useState, type PropsWithChildren } from "react";
 import { supabase } from "./supabase";
 import type { Locale } from "@/i18n";
+import { unregisterCurrentPushToken } from "@/notifications/push";
 
 export interface Profile {
   id: string;
@@ -60,7 +61,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
     profile,
     loading,
     refreshProfile: () => loadProfile(session),
-    signOut: async () => { await supabase.auth.signOut(); },
+    signOut: async () => {
+      await unregisterCurrentPushToken().catch(() => undefined);
+      await supabase.auth.signOut();
+    },
   }), [session, profile, loading]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

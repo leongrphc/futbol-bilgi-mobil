@@ -2,11 +2,18 @@
   "expo": {
     "name": "Football Link",
     "slug": "football-link",
+    "version": "1.0.0",
     "scheme": "footballlink",
     "plugins": [
       "expo-router",
       "expo-web-browser",
-      "expo-av",
+      [
+        "expo-av",
+        {
+          "microphonePermission": false
+        }
+      ],
+      "expo-notifications",
       [
         "react-native-google-mobile-ads",
         {
@@ -24,10 +31,22 @@
     },
     "android": {
       "package": "com.footballlink.mvp",
+      "versionCode": 1,
       "softwareKeyboardLayoutMode": "resize"
     },
     "ios": {
-      "bundleIdentifier": "com.footballlink.mvp"
-    }
+      "bundleIdentifier": "com.footballlink.mvp",
+      "buildNumber": "1",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "fd933232-db21-4395-b7d9-501c04787a76"
+      }
+    },
+    "owner": "mozkandev"
   }
 }

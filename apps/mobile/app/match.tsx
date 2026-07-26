@@ -9,6 +9,7 @@ import { normalizeAnswer } from "@football-link/answer-normalizer";
 import { colors } from "@/theme/colors";
 import { useMatchSocket } from "@/match/use-match-socket";
 import { clearActiveMatch, saveActiveMatch } from "@/match/active-match";
+import { normalizeRematchMode } from "@/match/rematch-mode";
 import { locale, tr } from "@/i18n";
 import { useAuth } from "@/auth/auth-context";
 import { supabase } from "@/auth/supabase";
@@ -256,7 +257,7 @@ export default function Match() {
     void playSfx("whistle");
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   }, [state.phase]);
-  useEffect(() => { void saveActiveMatch(botMode ? { matchId, playerId, mode: "bot" } : { matchId, playerId }); }, [botMode, matchId, playerId]);
+  useEffect(() => { void saveActiveMatch(socketMode ? { matchId, playerId, mode: socketMode } : { matchId, playerId }); }, [matchId, playerId, socketMode]);
   useEffect(() => { if (botMode) return; void supabase.rpc("social_set_presence", { p_state: "IN_MATCH" }); return () => { void supabase.rpc("social_set_presence", { p_state: "ONLINE" }); }; }, [botMode]);
   useEffect(() => {
     if (botMode) return;
@@ -468,8 +469,13 @@ export default function Match() {
     const completed = tutorialCompletion === "complete" || await completeTutorial();
     if (completed) router.replace({ pathname: "/lobby", params: nextRoom ? { playerId, room: nextRoom } : { playerId } });
   };
-  const rematchStartId = events.filter(event => event.event_type === "REMATCH_STARTED").at(-1)?.payload.match_id;
-  useEffect(() => { if (typeof rematchStartId === "string") router.replace({ pathname: "/match", params: { playerId, matchId: rematchStartId } }); }, [playerId, rematchStartId]);
+  const rematchStart = events.filter(event => event.event_type === "REMATCH_STARTED").at(-1);
+  const rematchStartId = rematchStart?.payload.match_id;
+  const rematchStartMode = normalizeRematchMode(rematchStart?.payload.mode);
+  useEffect(() => {
+    if (typeof rematchStartId !== "string") return;
+    router.replace({ pathname: "/match", params: { playerId, matchId: rematchStartId, ...(rematchStartMode ? { mode: rematchStartMode } : {}) } });
+  }, [playerId, rematchStartId, rematchStartMode]);
   const rematchDeclined = events.filter(event => event.event_type === "REMATCH_DECLINED").at(-1)?.event_id;
   const handledDecline = useRef<string | undefined>(undefined);
   useEffect(() => { if (rematchDeclined && handledDecline.current !== rematchDeclined) { handledDecline.current = rematchDeclined; Alert.alert(tr.rematch.declined); } }, [rematchDeclined]);
@@ -612,7 +618,7 @@ export default function Match() {
         </View>}
         {state.phase === "PAUSED" && <Centered title={tr.match.paused} copy={tr.match.pausedCopy} />}
         {state.phase === "REVEAL" && <ResultPanel title={tr.match.roundDone} value={state.reveal} playerId={playerId} reducedMotion={reducedMotion} momentumSeconds={seconds} suddenDeath={state.suddenDeath}>{!botMode && <ReportButton disabled={reporting || reported} onPress={openReport} />}</ResultPanel>}
-        {state.phase === "FINISHED" && <ResultPanel title={tr.match.matchDone} value={state.result} playerId={playerId} reducedMotion={reducedMotion} suddenDeath={state.suddenDeath}>
+        {state.phase === "FINISHED" && <ResultPanel final title={tr.match.matchDone} value={state.result} playerId={playerId} reducedMotion={reducedMotion} suddenDeath={state.suddenDeath}>
           {!tutorialMode && <><ShareCardPreview myScore={playerScore} oppScore={opponentScore} modeLabel={modeLabel} winnerId={typeof state.result?.winner_id === "string" ? state.result.winner_id : null} playerId={playerId} suddenDeath={state.suddenDeath} /><TrophyDelta before={trophyBefore} after={trophyAfter} kind={rankedKind ?? (state.matchMode === "BLITZ" ? "blitz" : state.matchMode === "RANKED" ? "ranked" : state.matchMode === "QUICK" ? "quick" : null)} /><ShareButton onPress={() => { void shareResult(); }} /></>}
           {!botMode && !blitzMode && !eventMode && <>{state.rematchOfferId || polledRematchOffer ? <RematchOffer onAccept={() => send("REMATCH_ACCEPT")} onDecline={() => send("REMATCH_DECLINE")} /> : <><ReportButton disabled={reporting || reported} onPress={openReport} /><RematchButton disabled={state.rematchPending} onPress={requestRematch} /></>}</>}
           {!botMode && (blitzMode || eventMode) && <ReportButton disabled={reporting || reported} onPress={openReport} />}
@@ -950,7 +956,7 @@ function SuddenDeathStinger({ reducedMotion, onDone }: { reducedMotion: boolean;
   </Animated.View>;
 }
 function ShareCardPreview({ myScore, oppScore, modeLabel, winnerId, playerId, suddenDeath }: { myScore: number; oppScore: number; modeLabel: string; winnerId: string | null; playerId: string; suddenDeath: boolean }) {
-  const outcome = winnerId === playerId ? tr.share.win : winnerId ? tr.share.loss : myScore === oppScore ? tr.share.draw : myScore > oppScore ? tr.share.win : tr.share.loss;
+  const outcome = winnerId === playerId ? tr.match.youWon : winnerId ? tr.match.opponentWon : myScore === oppScore ? tr.share.draw : myScore > oppScore ? tr.match.youWon : tr.match.opponentWon;
   return <View style={styles.shareCard}>
     <Text style={styles.shareCardKicker}>FOOTBALL LINK</Text>
     <Text style={styles.shareCardScore}>{myScore} – {oppScore}</Text>
@@ -958,7 +964,7 @@ function ShareCardPreview({ myScore, oppScore, modeLabel, winnerId, playerId, su
     <Text style={styles.shareCardMeta}>{modeLabel}{suddenDeath ? ` · ${tr.effects.suddenDeath}` : ""}</Text>
   </View>;
 }
-function ResultPanel({ title, value, playerId, reducedMotion, momentumSeconds, suddenDeath = false, children }: { title: string; value?: Record<string, unknown>; playerId: string; reducedMotion: boolean; momentumSeconds?: number | null; suddenDeath?: boolean; children?: ReactNode }) {
+function ResultPanel({ title, value, playerId, reducedMotion, momentumSeconds, suddenDeath = false, final = false, children }: { title: string; value?: Record<string, unknown>; playerId: string; reducedMotion: boolean; momentumSeconds?: number | null; suddenDeath?: boolean; final?: boolean; children?: ReactNode }) {
   const winner = value?.winner_id ?? value?.round_winner_id;
   const submissions = (value?.submissions ?? []) as { player_id?: string; answer?: string; correct?: boolean; received_at_ms?: number; sequence?: number }[];
   const marginMs = typeof value?.margin_ms === "number" ? value.margin_ms : null;
@@ -966,7 +972,11 @@ function ResultPanel({ title, value, playerId, reducedMotion, momentumSeconds, s
   const line = commentatorLine(value, playerId, suddenDeath || value?.sudden_death === true);
   const entrance = useRef(new Animated.Value(reducedMotion ? 1 : 0)).current;
   useEffect(() => { if (reducedMotion) { entrance.setValue(1); return; } Animated.timing(entrance, { toValue: 1, duration: 280, useNativeDriver: true }).start(); }, [entrance, reducedMotion, value]);
-  const headline = winner ? (winner === playerId ? tr.match.roundYours : tr.match.roundOpponent) : tr.match.noPoint;
+  const headline = winner
+    ? winner === playerId
+      ? final ? tr.match.youWon : tr.match.roundYours
+      : final ? tr.match.opponentWon : tr.match.roundOpponent
+    : tr.match.noPoint;
   return <Animated.View style={[styles.result, suddenDeath && styles.resultSudden, { opacity: entrance, transform: [{ translateY: entrance.interpolate({ inputRange: [0, 1], outputRange: [14, 0] }) }] }]}>
     <Text style={styles.stageKicker}>{suddenDeath ? tr.effects.suddenDeath : tr.match.referee}</Text>
     <Text style={styles.stageTitle}>{title}</Text>

@@ -1,9 +1,10 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { normalizeRematchMode, type RematchRouteMode } from "./rematch-mode";
 
 const ACTIVE_MATCH_KEY = "football-link:active-match";
 const MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
-export type ActiveMatch = { matchId: string; playerId: string; mode?: "bot"; savedAt: number };
+export type ActiveMatch = { matchId: string; playerId: string; mode?: "bot" | RematchRouteMode; savedAt: number };
 
 export async function saveActiveMatch(match: Omit<ActiveMatch, "savedAt">): Promise<void> {
   await AsyncStorage.setItem(ACTIVE_MATCH_KEY, JSON.stringify({ ...match, savedAt: Date.now() }));
@@ -18,7 +19,8 @@ export async function getActiveMatch(): Promise<ActiveMatch | null> {
       await clearActiveMatch();
       return null;
     }
-    return { matchId: value.matchId, playerId: value.playerId, savedAt: value.savedAt, ...(value.mode === "bot" ? { mode: "bot" as const } : {}) };
+    const mode = value.mode === "bot" ? "bot" as const : normalizeRematchMode(value.mode);
+    return { matchId: value.matchId, playerId: value.playerId, savedAt: value.savedAt, ...(mode ? { mode } : {}) };
   } catch {
     await clearActiveMatch();
     return null;

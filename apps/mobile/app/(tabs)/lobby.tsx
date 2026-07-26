@@ -12,11 +12,13 @@ import { CoinPill, DollarPill } from "@/economy/CoinPill";
 import { getAudioPrefsSync, loadAudioPrefs, setMusicEnabled, setSfxEnabled, subscribeAudioPrefs, type AudioPrefs } from "@/audio/preferences";
 import { playSfx, startLobbyMusic } from "@/audio/sounds";
 import { useLanguage } from "@/language/language-provider";
+import { useNotifications } from "@/notifications/notification-provider";
 
 export default function Lobby() {
   useLanguage();
   const { room: invitedRoom } = useLocalSearchParams<{ room?: string }>();
   const { profile, loading, signOut } = useAuth();
+  const { unreadCount } = useNotifications();
   const playerId = profile?.id ?? "";
   useEffect(() => { if (!loading && !profile) router.replace(invitedRoom ? { pathname: "/", params: { room: invitedRoom } } : "/"); }, [invitedRoom, loading, profile]);
   const [room, setRoom] = useState(invitedRoom?.trim() || "");
@@ -26,6 +28,7 @@ export default function Lobby() {
   const [rankedBusy, setRankedBusy] = useState(false);
   const [rankedProgress, setRankedProgress] = useState({ completed: 0, required: 5, unlocked: false });
   const [eventBusy, setEventBusy] = useState(false);
+  const [activePlayers, setActivePlayers] = useState<number>();
   const [queueNote, setQueueNote] = useState<string>();
   const [audioPrefs, setAudioPrefs] = useState<AudioPrefs>(getAudioPrefsSync());
   const [eventCard, setEventCard] = useState<{
@@ -48,8 +51,17 @@ export default function Lobby() {
   }, []);
   useFocusEffect(useCallback(() => {
     let alive = true;
+    const loadActivePlayers = async () => {
+      await supabase.rpc("social_set_presence", { p_state: "ONLINE" });
+      const active = await supabase.rpc("social_active_player_count");
+      if (alive && !active.error) setActivePlayers(Number(active.data ?? 0));
+    };
     void (async () => {
-      const ranked = await supabase.rpc("ranked_progress");
+      const [ranked, event] = await Promise.all([
+        supabase.rpc("ranked_progress"),
+        supabase.rpc("event_current"),
+        loadActivePlayers(),
+      ]);
       if (alive && !ranked.error && ranked.data) {
         setRankedProgress({
           completed: Number(ranked.data.completed_quick_matches ?? 0),
@@ -57,7 +69,6 @@ export default function Lobby() {
           unlocked: ranked.data.unlocked === true,
         });
       }
-      const event = await supabase.rpc("event_current");
       if (!alive) return;
       if (!event.error && event.data && typeof event.data === "object") {
         const row = event.data as {
@@ -85,8 +96,10 @@ export default function Lobby() {
         setEventCard({ status: "NONE" });
       }
     })();
+    const activeTimer = setInterval(() => { void loadActivePlayers(); }, 15_000);
     return () => {
       alive = false;
+      clearInterval(activeTimer);
     };
   }, []));
   const openAccountMenu = () => Alert.alert(profile?.displayName ?? tr.nav.account, profile ? `#${profile.playerCode}` : undefined, [
@@ -227,10 +240,21 @@ export default function Lobby() {
               {!!profile && <Text numberOfLines={1} style={styles.playerCode}>#{profile.playerCode}</Text>}
             </View>
           </Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel={tr.notifications.title} onPress={() => router.push("/notifications" as never)} style={({ pressed }) => [styles.notificationButton, pressed && styles.pressed]}>
+            <Text style={styles.notificationGlyph}>!</Text>
+            {unreadCount > 0 && <View style={styles.notificationBadge}><Text style={styles.notificationBadgeText}>{unreadCount > 9 ? "9+" : unreadCount}</Text></View>}
+          </Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel={tr.nav.account} onPress={openAccountMenu} style={({ pressed }) => [styles.menuButton, pressed && styles.pressed]}><Text style={styles.menuDots}>•••</Text></Pressable>
         </View>
       </View>
-      <View style={styles.heading}><Text style={styles.kicker}>{tr.lobby.kicker}</Text><Text style={styles.title}>{tr.lobby.title}</Text><View style={styles.headingRule}><View style={styles.headingSpot} /></View></View>
+      <View style={styles.heading}>
+        <View style={styles.headingMeta}>
+          <Text style={styles.kicker}>{tr.lobby.kicker}</Text>
+          {activePlayers != null && <View style={styles.livePulse}><View style={styles.livePulseDot} /><Text style={styles.livePulseText}>{tr.lobby.activePlayers(activePlayers)}</Text></View>}
+        </View>
+        <Text style={styles.title}>{tr.lobby.title}</Text>
+        <View style={styles.headingRule}><View style={styles.headingSpot} /></View>
+      </View>
       {eventCard.status === "LIVE" && (
         <Pressable
           accessibilityRole="button"
@@ -308,8 +332,8 @@ export default function Lobby() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background }, keyboard: { flex: 1 }, page: { padding: 22, gap: 22, paddingBottom: 116, overflow: "hidden" }, stadiumGlow: { position: "absolute", width: 310, height: 310, borderRadius: 155, top: -190, right: -110, backgroundColor: "rgba(255,243,207,0.035)", alignItems: "center", justifyContent: "center" }, glowRing: { position: "absolute", width: 230, height: 230, borderRadius: 115, borderWidth: 1, borderColor: "rgba(255,243,207,0.07)" }, glowRingInner: { width: 145, height: 145, borderRadius: 73, borderWidth: 1, borderColor: "rgba(255,243,207,0.08)" },
-  topbar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }, topbarActions: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 7 }, brandBadge: { width: 40, height: 40, borderRadius: 12, borderWidth: 1, borderColor: colors.pitchLine, alignItems: "center", justifyContent: "center", backgroundColor: colors.surface }, brandMark: { color: colors.floodlight, fontSize: 11, fontWeight: "900", letterSpacing: 1 }, playerChip: { flexShrink: 1, flexDirection: "row", gap: 7, alignItems: "center", backgroundColor: "rgba(16,34,46,0.88)", borderWidth: 1, borderColor: colors.border, borderRadius: 16, paddingHorizontal: 10, paddingVertical: 7 }, online: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.primary }, playerText: { flexShrink: 1, gap: 1 }, playerName: { color: colors.text, fontWeight: "800", fontSize: 11 }, playerCode: { color: colors.muted, fontWeight: "700", fontSize: 9, letterSpacing: .3 }, menuButton: { width: 34, height: 34, borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, alignItems: "center", justifyContent: "center" }, menuDots: { color: colors.accent, fontSize: 10, fontWeight: "900", letterSpacing: 1 },
-  heading: { marginTop: 7 }, kicker: { color: colors.primary, fontWeight: "900", fontSize: 10, letterSpacing: 2.2 }, title: { color: colors.text, fontSize: 40, lineHeight: 43, fontWeight: "900", letterSpacing: -1.5, marginTop: 10, maxWidth: 320 }, headingRule: { height: 1, backgroundColor: colors.border, marginTop: 18, justifyContent: "center" }, headingSpot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.signal, marginLeft: 26 },
+  topbar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }, topbarActions: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 7 }, brandBadge: { width: 40, height: 40, borderRadius: 12, borderWidth: 1, borderColor: colors.pitchLine, alignItems: "center", justifyContent: "center", backgroundColor: colors.surface }, brandMark: { color: colors.floodlight, fontSize: 11, fontWeight: "900", letterSpacing: 1 }, playerChip: { flexShrink: 1, flexDirection: "row", gap: 7, alignItems: "center", backgroundColor: "rgba(16,34,46,0.88)", borderWidth: 1, borderColor: colors.border, borderRadius: 16, paddingHorizontal: 10, paddingVertical: 7 }, online: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.primary }, playerText: { flexShrink: 1, gap: 1 }, playerName: { color: colors.text, fontWeight: "800", fontSize: 11 }, playerCode: { color: colors.muted, fontWeight: "700", fontSize: 9, letterSpacing: .3 }, notificationButton: { width: 34, height: 34, borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, alignItems: "center", justifyContent: "center" }, notificationGlyph: { color: colors.primary, fontSize: 14, fontWeight: "900" }, notificationBadge: { position: "absolute", minWidth: 16, height: 16, borderRadius: 8, top: -5, right: -5, paddingHorizontal: 3, alignItems: "center", justifyContent: "center", backgroundColor: colors.danger, borderWidth: 1, borderColor: colors.background }, notificationBadgeText: { color: "#FFF", fontSize: 8, fontWeight: "900" }, menuButton: { width: 34, height: 34, borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, alignItems: "center", justifyContent: "center" }, menuDots: { color: colors.accent, fontSize: 10, fontWeight: "900", letterSpacing: 1 },
+  heading: { marginTop: 7 }, headingMeta: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 }, kicker: { flex: 1, color: colors.primary, fontWeight: "900", fontSize: 10, letterSpacing: 2.2 }, livePulse: { flexDirection: "row", alignItems: "center", gap: 6, borderWidth: 1, borderColor: "rgba(89,213,166,.32)", backgroundColor: "rgba(89,213,166,.08)", borderRadius: 999, paddingHorizontal: 9, paddingVertical: 6 }, livePulseDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.primary }, livePulseText: { color: colors.primary, fontSize: 9, fontWeight: "900", letterSpacing: .35 }, title: { color: colors.text, fontSize: 40, lineHeight: 43, fontWeight: "900", letterSpacing: -1.5, marginTop: 10, maxWidth: 320 }, headingRule: { height: 1, backgroundColor: colors.border, marginTop: 18, justifyContent: "center" }, headingSpot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.signal, marginLeft: 26 },
   quickCard: { backgroundColor: colors.floodlight, borderRadius: 16, minHeight: 104, flexDirection: "row", alignItems: "stretch", overflow: "hidden", shadowColor: "#000", shadowOpacity: .22, shadowRadius: 18, shadowOffset: { width: 0, height: 10 }, elevation: 7 }, signalStrip: { width: 8, backgroundColor: colors.signal }, quickContent: { flex: 1, paddingHorizontal: 17, paddingVertical: 15, justifyContent: "center" }, quickKicker: { color: colors.signal, fontSize: 9, fontWeight: "900", letterSpacing: 1.35, marginBottom: 7 }, quickTitle: { color: colors.ink, fontWeight: "900", fontSize: 20, letterSpacing: -.3 }, quickCopy: { color: colors.ink, opacity: 0.62, fontSize: 12, marginTop: 4 }, rankedCups: { color: colors.ink, opacity: 0.7, fontSize: 11, fontWeight: "800", marginTop: 6 }, quickAction: { width: 54, borderLeftWidth: 1, borderLeftColor: "rgba(8,23,32,.14)", alignItems: "center", justifyContent: "center" }, quickArrow: { color: colors.ink, fontSize: 26 }, queueNote: { color: colors.accent, fontSize: 12, fontWeight: "700", marginTop: -8 },
   blitzCard: { backgroundColor: "#1A1028", borderRadius: 16, minHeight: 104, flexDirection: "row", alignItems: "stretch", overflow: "hidden", borderWidth: 1, borderColor: "#6B4DFF" }, blitzStrip: { width: 8, backgroundColor: "#8B6CFF" }, blitzKicker: { color: "#B896FF", fontSize: 9, fontWeight: "900", letterSpacing: 1.25, marginBottom: 7 }, blitzTitle: { color: colors.floodlight, fontWeight: "900", fontSize: 20, letterSpacing: -.3 }, blitzCopy: { color: colors.muted, fontSize: 12, marginTop: 4 }, blitzCups: { color: "#B896FF", fontSize: 11, fontWeight: "800", marginTop: 6 }, blitzArrow: { color: "#B896FF", fontSize: 22 },
   rankedCard: { backgroundColor: "#241D16", borderRadius: 16, minHeight: 104, flexDirection: "row", alignItems: "stretch", overflow: "hidden", borderWidth: 1, borderColor: "#8F7440" },

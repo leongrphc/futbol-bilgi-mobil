@@ -1,18 +1,31 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useFocusEffect } from "expo-router";
-import { Animated, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { router, useFocusEffect } from "expo-router";
+import { Alert, Animated, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "@/auth/auth-context";
 import { supabase } from "@/auth/supabase";
 import { colors } from "@/theme/colors";
 import { tr } from "@/i18n";
 import { useLanguage } from "@/language/language-provider";
+import { createFriendRoomKey, friendErrorMessage, type FriendshipState } from "@/friends/social-actions";
 
 type LadderTab = "quick" | "blitz" | "ranked";
 type QuickRow = { rank: number; display_name: string; player_code: string; trophies: number; is_me?: boolean };
 type BlitzRow = { rank: number; display_name: string; player_code: string; blitz_trophies: number; is_me?: boolean };
 type RankedRow = { rank: number; display_name: string; player_code: string; ranked_trophies: number; is_me?: boolean };
-type History = { match_id: string; mode: string; opponent_name: string; score_for: number; score_against: number; outcome: "WIN" | "LOSS"; finished_at: string };
+type History = {
+  match_id: string;
+  mode: string;
+  opponent_id: string;
+  opponent_name: string;
+  opponent_code: string;
+  score_for: number;
+  score_against: number;
+  outcome: "WIN" | "LOSS";
+  trophy_delta: number | null;
+  friend_state: FriendshipState;
+  finished_at: string;
+};
 
 export default function Competition() {
   useLanguage();
@@ -22,6 +35,7 @@ export default function Competition() {
   const [blitzTable, setBlitzTable] = useState<BlitzRow[]>([]);
   const [rankedTable, setRankedTable] = useState<RankedRow[]>([]);
   const [history, setHistory] = useState<History[]>([]);
+  const [historyBusy, setHistoryBusy] = useState<string>();
   const pulse = useRef(new Animated.Value(.86)).current;
 
   const load = useCallback(async () => {
@@ -51,6 +65,52 @@ export default function Competition() {
     if (mode === "EVENT") return tr.event.badge;
     return tr.ranked.unranked;
   };
+  const historyActionLabel = (state: FriendshipState) => {
+    if (state === "ACCEPTED") return tr.friends.invite;
+    if (state === "PENDING_INCOMING") return tr.friends.accept;
+    if (state === "PENDING_OUTGOING") return tr.friends.outgoing;
+    return tr.friends.add;
+  };
+  const updateHistoryFriendState = (opponentId: string, friendState: FriendshipState) => {
+    setHistory(current => current.map(item => item.opponent_id === opponentId ? { ...item, friend_state: friendState } : item));
+  };
+  const requestFriend = async (item: History) => {
+    setHistoryBusy(item.opponent_id);
+    const { data, error } = await supabase.rpc("social_request_friend", { p_player_code: item.opponent_code });
+    setHistoryBusy(undefined);
+    if (error) { Alert.alert(friendErrorMessage(error)); return; }
+    const accepted = data === "ACCEPTED" || data === "ALREADY_FRIENDS";
+    updateHistoryFriendState(item.opponent_id, accepted ? "ACCEPTED" : "PENDING_OUTGOING");
+    Alert.alert(accepted ? tr.friends.accepted : tr.friends.sent);
+  };
+  const invite = (item: History) => {
+    const room = createFriendRoomKey();
+    Alert.alert(tr.friends.inviteTitle, tr.friends.inviteCopy(item.opponent_name), [
+      { text: tr.report.cancel, style: "cancel" },
+      {
+        text: tr.friends.invite,
+        onPress: () => {
+          setHistoryBusy(item.opponent_id);
+          void supabase.rpc("social_invite_friend", { p_friend_id: item.opponent_id, p_room_key: room }).then(({ error }) => {
+            setHistoryBusy(undefined);
+            if (error) { Alert.alert(friendErrorMessage(error)); return; }
+            if (!profile) return;
+            Alert.alert(tr.social.inviteSent);
+            router.replace({ pathname: "/match", params: { playerId: profile.id, matchId: room } });
+          });
+        },
+      },
+    ]);
+  };
+  const runHistoryAction = (item: History) => {
+    if (item.friend_state === "ACCEPTED") invite(item);
+    else if (item.friend_state !== "PENDING_OUTGOING") void requestFriend(item);
+  };
+  const openOpponent = (item: History) => {
+    router.push({ pathname: "/player-card", params: { playerId: item.opponent_id } } as never);
+  };
+  const formatFinishedAt = (value: string) => new Intl.DateTimeFormat(undefined, { day: "2-digit", month: "short" }).format(new Date(value));
+  const formatDelta = (value: number) => value > 0 ? `+${value}` : value < 0 ? `−${Math.abs(value)}` : "0";
 
   const quick = tab === "quick";
   const blitz = tab === "blitz";
@@ -143,14 +203,44 @@ export default function Competition() {
 
         <Section title={tr.competition.history}>
           {history.length ? history.map(item => (
-            <View key={item.match_id} style={styles.history}>
-              <View>
-                <Text style={[styles.outcome, item.outcome === "WIN" ? styles.win : styles.loss]}>{item.outcome === "WIN" ? tr.competition.winLabel : tr.competition.lossLabel}</Text>
-                <Text style={styles.opponent}>{item.opponent_name}</Text>
-              </View>
-              <View style={styles.scoreBlock}>
-                <Text style={styles.matchScore}>{item.score_for}–{item.score_against}</Text>
-                <Text style={styles.mode}>{modeLabel(item.mode)}</Text>
+            <View key={item.match_id} style={[styles.history, item.outcome === "WIN" ? styles.historyWin : styles.historyLoss]}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={tr.competition.openPlayer(item.opponent_name)}
+                onPress={() => openOpponent(item)}
+                style={({ pressed }) => [styles.historyMain, pressed && styles.pressed]}
+              >
+                <View style={styles.historyIdentity}>
+                  <View style={styles.historyResultLine}>
+                    <Text style={[styles.outcome, item.outcome === "WIN" ? styles.win : styles.loss]}>{item.outcome === "WIN" ? tr.competition.winLabel : tr.competition.lossLabel}</Text>
+                    <Text style={styles.historyDate}>{formatFinishedAt(item.finished_at)}</Text>
+                  </View>
+                  <Text style={styles.opponent}>{item.opponent_name}</Text>
+                  <Text style={styles.opponentCode}>#{item.opponent_code} · {modeLabel(item.mode)}</Text>
+                </View>
+                <View style={styles.scoreBlock}>
+                  <Text style={styles.matchScore}>{item.score_for}–{item.score_against}</Text>
+                  <Text style={styles.profileArrow}>›</Text>
+                </View>
+              </Pressable>
+              <View style={styles.historyFooter}>
+                <View style={styles.deltaSlot}>
+                  {item.trophy_delta != null && item.mode !== "EVENT" && (
+                    <View style={[styles.deltaChip, item.trophy_delta > 0 ? styles.deltaPositive : item.trophy_delta < 0 ? styles.deltaNegative : styles.deltaNeutral]}>
+                      <Text style={[styles.deltaText, item.trophy_delta > 0 ? styles.deltaTextPositive : item.trophy_delta < 0 ? styles.deltaTextNegative : undefined]}>{formatDelta(item.trophy_delta)} {tr.common.trophies}</Text>
+                    </View>
+                  )}
+                </View>
+                {item.friend_state !== "SELF" && (
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={historyBusy === item.opponent_id || item.friend_state === "PENDING_OUTGOING"}
+                    onPress={() => runHistoryAction(item)}
+                    style={({ pressed }) => [styles.historyAction, item.friend_state === "ACCEPTED" && styles.historyInvite, (historyBusy === item.opponent_id || item.friend_state === "PENDING_OUTGOING") && styles.disabled, pressed && styles.pressed]}
+                  >
+                    <Text style={[styles.historyActionText, item.friend_state === "ACCEPTED" && styles.historyInviteText]}>{historyActionLabel(item.friend_state)}</Text>
+                  </Pressable>
+                )}
               </View>
             </View>
           )) : <Text style={styles.empty}>{tr.competition.noHistory}</Text>}
@@ -207,7 +297,28 @@ const styles = StyleSheet.create({
   points: { color: colors.text, fontWeight: "900", fontSize: 18 },
   blitzPoints: { color: "#B896FF" },
   rankedPoints: { color: "#F3C969" },
-  history: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, padding: 13 },
+  history: { borderRadius: 14, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, overflow: "hidden" },
+  historyWin: { borderLeftWidth: 3, borderLeftColor: colors.primary },
+  historyLoss: { borderLeftWidth: 3, borderLeftColor: colors.danger },
+  historyMain: { minHeight: 82, flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 13, paddingVertical: 12 },
+  historyIdentity: { flex: 1, minWidth: 0 },
+  historyResultLine: { flexDirection: "row", alignItems: "center", gap: 8 },
+  historyDate: { color: colors.muted, fontSize: 9, fontWeight: "700", textTransform: "uppercase" },
+  opponentCode: { color: colors.muted, marginTop: 3, fontSize: 10, fontWeight: "700" },
+  profileArrow: { color: colors.muted, fontSize: 25, lineHeight: 26, fontWeight: "500" },
+  historyFooter: { minHeight: 48, borderTopWidth: 1, borderTopColor: colors.border, paddingHorizontal: 12, paddingVertical: 8, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
+  deltaSlot: { flex: 1, alignItems: "flex-start" },
+  deltaChip: { borderRadius: 999, paddingHorizontal: 9, paddingVertical: 5, backgroundColor: colors.surfaceElevated },
+  deltaPositive: { backgroundColor: "rgba(89,213,166,.12)" },
+  deltaNegative: { backgroundColor: "rgba(255,113,108,.12)" },
+  deltaNeutral: { backgroundColor: colors.surfaceElevated },
+  deltaText: { color: colors.muted, fontSize: 10, fontWeight: "900" },
+  deltaTextPositive: { color: colors.primary },
+  deltaTextNegative: { color: colors.danger },
+  historyAction: { minHeight: 32, justifyContent: "center", borderRadius: 9, paddingHorizontal: 11, backgroundColor: colors.primary },
+  historyActionText: { color: colors.background, fontSize: 10, fontWeight: "900" },
+  historyInvite: { backgroundColor: "transparent", borderWidth: 1, borderColor: colors.accent },
+  historyInviteText: { color: colors.accent },
   outcome: { fontSize: 10, fontWeight: "900", letterSpacing: .7 },
   win: { color: colors.primary },
   loss: { color: colors.danger },
@@ -216,4 +327,6 @@ const styles = StyleSheet.create({
   matchScore: { color: colors.text, fontSize: 20, fontWeight: "900" },
   mode: { color: colors.muted, fontSize: 10, marginTop: 3 },
   empty: { color: colors.muted, backgroundColor: colors.surface, borderRadius: 12, padding: 15 },
+  disabled: { opacity: .42 },
+  pressed: { opacity: .8, transform: [{ scale: .99 }] },
 });

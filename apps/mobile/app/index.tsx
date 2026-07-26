@@ -34,7 +34,7 @@ export default function Login() {
   const [error, setError] = useState("");
   const [activeMatch, setActiveMatch] = useState<ActiveMatch | null>(null);
   const [activeMatchLoaded, setActiveMatchLoaded] = useState(false);
-  const tutorialRedirected = useRef(false);
+  const entryRedirected = useRef(false);
 
   useFocusEffect(useCallback(() => {
     let alive = true;
@@ -43,20 +43,30 @@ export default function Login() {
   }, []));
 
   useEffect(() => {
-    if (authLoading || !session || !profile || !activeMatchLoaded || profile.tutorialCompletedAt || tutorialRedirected.current) return;
-    tutorialRedirected.current = true;
-    const savedTutorial = activeMatch?.playerId === profile.id && activeMatch.mode === "bot" ? activeMatch : null;
-    router.replace({
-      pathname: "/match",
-      params: {
-        playerId: profile.id,
-        matchId: savedTutorial?.matchId ?? `bot-${profile.id}-${Date.now()}`,
-        mode: "bot",
-        tutorial: "1",
-        ...(savedTutorial ? { resume: "1" } : {}),
-        ...(invitedRoom ? { nextRoom: invitedRoom } : {}),
-      },
-    });
+    if (authLoading || !session || !profile || !activeMatchLoaded || entryRedirected.current) return;
+    entryRedirected.current = true;
+    if (!profile.tutorialCompletedAt) {
+      const savedTutorial = activeMatch?.playerId === profile.id && activeMatch.mode === "bot" ? activeMatch : null;
+      router.replace({
+        pathname: "/match",
+        params: {
+          playerId: profile.id,
+          matchId: savedTutorial?.matchId ?? `bot-${profile.id}-${Date.now()}`,
+          mode: "bot",
+          tutorial: "1",
+          ...(savedTutorial ? { resume: "1" } : {}),
+          ...(invitedRoom ? { nextRoom: invitedRoom } : {}),
+        },
+      });
+      return;
+    }
+    if (activeMatch?.playerId === profile.id) {
+      const params: Record<string, string> = { playerId: profile.id, matchId: activeMatch.matchId, resume: "1" };
+      if (activeMatch.mode) params.mode = activeMatch.mode;
+      router.replace({ pathname: "/match", params });
+      return;
+    }
+    router.replace({ pathname: "/lobby", params: invitedRoom ? { playerId: profile.id, room: invitedRoom } : { playerId: profile.id } });
   }, [activeMatch, activeMatchLoaded, authLoading, invitedRoom, profile, session]);
 
   const submitEmail = async () => {
@@ -95,14 +105,6 @@ export default function Login() {
     finally { setBusy(false); }
   };
 
-  const enter = () => { if (profile) router.replace({ pathname: "/lobby", params: invitedRoom ? { playerId: profile.id, room: invitedRoom } : { playerId: profile.id } }); };
-  const resumeMatch = () => {
-    if (!activeMatch || !profile || activeMatch.playerId !== profile.id) return;
-    const params: Record<string, string> = { playerId: profile.id, matchId: activeMatch.matchId, resume: "1" };
-    if (activeMatch.mode) params.mode = activeMatch.mode;
-    router.push({ pathname: "/match", params });
-  };
-
   const insets = useSafeAreaInsets();
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   useEffect(() => {
@@ -121,7 +123,7 @@ export default function Login() {
     ? (keyboardHeight > 0 ? 10 : 12)
     : Math.max(12, keyboardHeight > 0 ? keyboardHeight + 10 - insets.bottom : 12);
 
-  if (authLoading) return <SafeAreaView style={styles.loading}><ActivityIndicator color={colors.primary} size="large" /><Text style={styles.loadingText}>{tr.auth.checking}</Text></SafeAreaView>;
+  if (authLoading || (session && profile)) return <SafeAreaView style={styles.loading}><ActivityIndicator color={colors.primary} size="large" /><Text style={styles.loadingText}>{tr.auth.checking}</Text></SafeAreaView>;
 
   return <SafeAreaView edges={["top", "left", "right"]} style={styles.safe}>
     <KeyboardAvoidingView
@@ -145,16 +147,10 @@ export default function Login() {
           </View>
           <Text style={styles.title}>{tr.auth.title}{"\n"}<Text style={styles.titleAccent}>{tr.auth.titleAccent}</Text></Text>
           <View style={styles.pitchLine}><View style={styles.centerSpot} /></View>
-          <Text style={styles.lead}>{session ? tr.auth.welcome(profile?.displayName ?? tr.common.player) : tr.auth.lead}</Text>
+          <Text style={styles.lead}>{tr.auth.lead}</Text>
         </View>
 
-        {session && profile ? <View style={styles.signedIn}>
-          {activeMatch?.playerId === profile.id && <Pressable accessibilityRole="button" onPress={resumeMatch} style={({ pressed }) => [styles.resumeCard, pressed && styles.pressed]}>
-            <View><Text style={styles.resumeKicker}>{tr.auth.activeMatch}</Text><Text style={styles.resumeTitle}>{activeMatch.mode === "bot" ? tr.auth.botMatch : tr.auth.friendRoom}</Text></View><Text style={styles.resumeArrow}>↗</Text>
-          </Pressable>}
-          <View style={styles.profileCard}><View><Text style={styles.profileName}>{profile.displayName}</Text><Text style={styles.profileCode}>#{profile.playerCode} · {profile.trophies} {tr.common.trophies}</Text></View><View style={styles.statusDot} /></View>
-          <Pressable onPress={enter} style={({ pressed }) => [styles.button, pressed && styles.pressed]}><Text style={styles.buttonText}>{tr.auth.matchCenter}</Text><Text style={styles.arrow}>→</Text></Pressable>
-        </View> : <View style={styles.form}>
+        <View style={styles.form}>
           <View style={styles.tabs}><Pressable onPress={() => setMode("sign-in")} style={[styles.tab, mode === "sign-in" && styles.tabActive]}><Text style={[styles.tabText, mode === "sign-in" && styles.tabTextActive]}>{tr.common.signIn}</Text></Pressable><Pressable onPress={() => setMode("sign-up")} style={[styles.tab, mode === "sign-up" && styles.tabActive]}><Text style={[styles.tabText, mode === "sign-up" && styles.tabTextActive]}>{tr.common.signUp}</Text></Pressable></View>
           {mode === "sign-up" && <TextInput accessibilityLabel={tr.auth.displayName} value={displayName} onChangeText={setDisplayName} placeholder={tr.auth.displayName} placeholderTextColor={colors.muted} style={styles.input} maxLength={30} />}
           <TextInput accessibilityLabel={tr.auth.email} value={email} onChangeText={setEmail} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" textContentType="emailAddress" placeholder={tr.auth.email} placeholderTextColor={colors.muted} style={styles.input} />
@@ -163,7 +159,7 @@ export default function Login() {
           <Pressable disabled={busy} onPress={submitEmail} style={({ pressed }) => [styles.button, pressed && styles.pressed, busy && styles.disabled]}><Text style={styles.buttonText}>{mode === "sign-in" ? tr.common.signIn : tr.common.signUp}</Text>{busy ? <ActivityIndicator color={colors.background} /> : <Text style={styles.arrow}>→</Text>}</Pressable>
           <View style={styles.socialDivider}><View style={styles.rule} /><Text style={styles.or}>{tr.auth.or}</Text><View style={styles.rule} /></View>
           <View style={styles.socialRow}><Pressable disabled={busy} onPress={() => socialSignIn("google")} style={({ pressed }) => [styles.socialButton, pressed && styles.pressed]}><Text style={styles.socialMark}>G</Text><Text style={styles.socialText}>Google</Text></Pressable><Pressable disabled={busy} onPress={() => socialSignIn("apple")} style={({ pressed }) => [styles.socialButton, pressed && styles.pressed]}><Text style={styles.socialMark}>●</Text><Text style={styles.socialText}>Apple</Text></Pressable></View>
-        </View>}
+        </View>
       </ScrollView>
     </KeyboardAvoidingView>
   </SafeAreaView>;
@@ -174,5 +170,5 @@ const styles = StyleSheet.create({
   brand: { paddingTop: 24 }, brandTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 }, kicker: { flex: 1, color: colors.primary, fontSize: 11, fontWeight: "900", letterSpacing: 1.7 }, languageShortcut: { minHeight: 36, borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, paddingHorizontal: 11, alignItems: "center", justifyContent: "center" }, languageShortcutText: { color: colors.accent, fontSize: 9, fontWeight: "900", letterSpacing: .8 }, title: { color: colors.text, fontSize: 45, lineHeight: 49, fontWeight: "900", letterSpacing: -1.8, marginTop: 16 }, titleAccent: { color: colors.accent }, pitchLine: { height: 1, backgroundColor: colors.pitchLine, marginVertical: 23, alignItems: "center", justifyContent: "center" }, centerSpot: { width: 11, height: 11, borderRadius: 6, borderWidth: 2, borderColor: colors.primary, backgroundColor: colors.background }, lead: { color: colors.muted, fontSize: 16, lineHeight: 23, maxWidth: 330 },
   form: { gap: 10, paddingBottom: 10, marginBottom: 10 }, tabs: { flexDirection: "row", padding: 4, borderRadius: 12, backgroundColor: colors.surface, marginBottom: 4 }, tab: { flex: 1, paddingVertical: 11, alignItems: "center", borderRadius: 9 }, tabActive: { backgroundColor: colors.surfaceElevated }, tabText: { color: colors.muted, fontWeight: "800" }, tabTextActive: { color: colors.text }, input: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, color: colors.text, paddingHorizontal: 16, paddingVertical: 14, borderRadius: 11, fontSize: 16 },
   button: { marginTop: 3, backgroundColor: colors.primary, minHeight: 54, borderRadius: 11, paddingHorizontal: 17, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, buttonText: { color: colors.background, fontSize: 16, fontWeight: "900" }, arrow: { color: colors.background, fontSize: 23 }, error: { color: colors.danger, fontSize: 13, lineHeight: 18 }, notice: { color: colors.primary, fontSize: 13, lineHeight: 18 }, socialDivider: { flexDirection: "row", alignItems: "center", gap: 11, marginVertical: 5 }, rule: { height: 1, backgroundColor: colors.border, flex: 1 }, or: { color: colors.muted, fontSize: 9, fontWeight: "900", letterSpacing: 1.2 }, socialRow: { flexDirection: "row", gap: 10 }, socialButton: { flex: 1, minHeight: 49, borderRadius: 11, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 9 }, socialMark: { color: colors.accent, fontWeight: "900", fontSize: 15 }, socialText: { color: colors.text, fontWeight: "800" },
-  signedIn: { gap: 12, paddingBottom: 12 }, profileCard: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 14, padding: 17, flexDirection: "row", justifyContent: "space-between", alignItems: "center" }, profileName: { color: colors.text, fontSize: 20, fontWeight: "900" }, profileCode: { color: colors.muted, marginTop: 5, fontWeight: "700", fontSize: 12 }, statusDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.primary }, resumeCard: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.accent, borderRadius: 14, padding: 16, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, resumeKicker: { color: colors.accent, fontSize: 9, fontWeight: "900", letterSpacing: 1.2 }, resumeTitle: { color: colors.text, fontSize: 17, fontWeight: "900", marginTop: 5 }, resumeArrow: { color: colors.accent, fontSize: 24 }, pressed: { opacity: 0.82, transform: [{ scale: 0.99 }] }, disabled: { opacity: 0.45 },
+  pressed: { opacity: 0.82, transform: [{ scale: 0.99 }] }, disabled: { opacity: 0.45 },
 });
