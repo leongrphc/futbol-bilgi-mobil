@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { router, useFocusEffect } from "expo-router";
-import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import * as ImagePicker from "expo-image-picker";
+import { ActivityIndicator, Alert, Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { BottomNav } from "@/navigation/bottom-nav";
@@ -8,6 +9,7 @@ import { colors } from "@/theme/colors";
 import { locale, tr } from "@/i18n";
 import { useAuth } from "@/auth/auth-context";
 import { loadPlayerProfileStats, type CompetitiveMode, type PlayerProfileStats } from "@/profile/api";
+import { AvatarUploadError, uploadProfileAvatar } from "@/profile/avatar";
 import { useLanguage } from "@/language/language-provider";
 
 const modeColors: Record<CompetitiveMode, string> = {
@@ -19,10 +21,12 @@ const modeColors: Record<CompetitiveMode, string> = {
 
 export default function Profile() {
   const { locale: activeLocale } = useLanguage();
-  const { profile } = useAuth();
+  const { profile, refreshProfile } = useAuth();
   const [stats, setStats] = useState<PlayerProfileStats>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
+  const [avatarPreview, setAvatarPreview] = useState<string>();
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -38,6 +42,44 @@ export default function Profile() {
   const displayName = stats?.profile.displayName || profile?.displayName || "Football Link";
   const initials = useMemo(() => displayName.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]?.toLocaleUpperCase(locale)).join("") || "FL", [activeLocale, displayName]);
   const memberSince = stats?.profile.createdAt ? new Intl.DateTimeFormat(locale === "tr" ? "tr-TR" : "en-GB", { month: "long", year: "numeric" }).format(new Date(stats.profile.createdAt)) : "";
+  const currentAvatarUrl = avatarPreview ?? stats?.profile.avatarUrl ?? profile?.avatarUrl ?? null;
+
+  const chooseAvatar = async () => {
+    if (!profile || uploadingAvatar) return;
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert(tr.profile.avatarPermission);
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      allowsEditing: true,
+      aspect: [1, 1],
+      mediaTypes: ["images"],
+      quality: 0.8,
+      selectionLimit: 1,
+    });
+    if (result.canceled || !result.assets[0]) return;
+
+    const previousPreview = avatarPreview;
+    const asset = result.assets[0];
+    setAvatarPreview(asset.uri);
+    setUploadingAvatar(true);
+    try {
+      const publicUrl = await uploadProfileAvatar({
+        asset,
+        previousAvatarUrl: stats?.profile.avatarUrl ?? profile.avatarUrl,
+        userId: profile.id,
+      });
+      setAvatarPreview(publicUrl);
+      await Promise.all([refreshProfile(), refresh()]);
+    } catch (uploadError) {
+      setAvatarPreview(previousPreview);
+      Alert.alert(tr.profile.avatarFailed, avatarErrorMessage(uploadError));
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -60,9 +102,22 @@ export default function Profile() {
           <View style={styles.identityCard}>
             <View pointerEvents="none" style={styles.pitchMark}><View style={styles.pitchCircle} /><View style={styles.pitchLine} /></View>
             <View style={styles.identityTop}>
-              <View style={styles.avatarFrame}>
-                {stats.profile.avatarUrl ? <Image source={{ uri: stats.profile.avatarUrl }} style={styles.avatarImage} /> : <Text style={styles.avatarInitials}>{initials}</Text>}
-              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={tr.profile.avatarEdit}
+                accessibilityState={{ busy: uploadingAvatar, disabled: uploadingAvatar }}
+                disabled={uploadingAvatar}
+                onPress={() => { void chooseAvatar(); }}
+                style={({ pressed }) => [styles.avatarEditor, pressed && styles.pressed]}
+              >
+                <View style={styles.avatarFrame}>
+                  {currentAvatarUrl ? <Image source={{ uri: currentAvatarUrl }} resizeMode="cover" style={styles.avatarImage} /> : <Text style={styles.avatarInitials}>{initials}</Text>}
+                  {uploadingAvatar && <View style={styles.avatarLoading}><ActivityIndicator color={colors.floodlight} size="small" /></View>}
+                </View>
+                <View style={styles.avatarEditBadge}>
+                  <Ionicons name="camera" size={13} color={colors.ink} />
+                </View>
+              </Pressable>
               <View style={styles.identityCopy}>
                 <Text numberOfLines={2} style={styles.name}>{stats.profile.displayName}</Text>
                 <Text style={styles.code}>#{stats.profile.playerCode}</Text>
@@ -166,6 +221,13 @@ function modeShort(mode: CompetitiveMode): string {
   return mode === "QUICK" ? "Q" : mode === "BLITZ" ? "B" : mode === "RANKED" ? "R" : "E";
 }
 
+function avatarErrorMessage(error: unknown): string {
+  if (!(error instanceof AvatarUploadError)) return tr.profile.avatarUploadFailed;
+  if (error.code === "AVATAR_TOO_LARGE") return tr.profile.avatarTooLarge;
+  if (error.code === "AVATAR_UNSUPPORTED") return tr.profile.avatarUnsupported;
+  return tr.profile.avatarUploadFailed;
+}
+
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   page: { padding: 22, gap: 16, paddingBottom: 118 },
@@ -181,9 +243,12 @@ const styles = StyleSheet.create({
   pitchCircle: { width: 76, height: 76, borderRadius: 38, borderWidth: 1, borderColor: "rgba(89,213,166,.18)" },
   pitchLine: { position: "absolute", width: 1, height: 190, backgroundColor: "rgba(89,213,166,.12)" },
   identityTop: { flexDirection: "row", alignItems: "center", gap: 13 },
+  avatarEditor: { position: "relative" },
   avatarFrame: { width: 68, height: 78, borderRadius: 15, borderWidth: 1, borderColor: colors.accent, backgroundColor: colors.background, alignItems: "center", justifyContent: "center", overflow: "hidden" },
   avatarImage: { width: "100%", height: "100%" },
   avatarInitials: { color: colors.floodlight, fontSize: 23, fontWeight: "900", letterSpacing: -1 },
+  avatarLoading: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(7,18,28,.64)" },
+  avatarEditBadge: { position: "absolute", width: 25, height: 25, borderRadius: 13, right: -7, bottom: -7, borderWidth: 2, borderColor: "#0D2831", backgroundColor: colors.accent, alignItems: "center", justifyContent: "center" },
   identityCopy: { flex: 1, gap: 5 },
   name: { color: colors.text, fontSize: 24, lineHeight: 27, fontWeight: "900", letterSpacing: -.7 },
   code: { color: colors.accent, fontSize: 11, fontWeight: "900", letterSpacing: 1 },

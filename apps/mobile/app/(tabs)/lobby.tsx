@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import * as Linking from "expo-linking";
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from "react-native";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import { ActivityIndicator, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { colors } from "@/theme/colors";
 import { useAuth } from "@/auth/auth-context";
@@ -31,6 +32,7 @@ export default function Lobby() {
   const [activePlayers, setActivePlayers] = useState<number>();
   const [queueNote, setQueueNote] = useState<string>();
   const [audioPrefs, setAudioPrefs] = useState<AudioPrefs>(getAudioPrefsSync());
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [eventCard, setEventCard] = useState<{
     status: "NONE" | "LIVE";
     id?: string;
@@ -102,31 +104,13 @@ export default function Lobby() {
       clearInterval(activeTimer);
     };
   }, []));
-  const openAccountMenu = () => Alert.alert(profile?.displayName ?? tr.nav.account, profile ? `#${profile.playerCode}` : undefined, [
-    { text: tr.report.cancel, style: "cancel" },
-    { text: tr.profile.open, onPress: () => router.push("/profile" as never) },
-    { text: tr.achievements.menu, onPress: () => router.push("/achievements" as never) },
-    { text: tr.settings.open, onPress: () => router.push("/settings" as never) },
-    {
-      text: audioPrefs.sfxEnabled ? tr.audio.sfxOn : tr.audio.sfxOff,
-      onPress: () => {
-        void setSfxEnabled(!audioPrefs.sfxEnabled).then(next => {
-          setAudioPrefs(next);
-          if (next.sfxEnabled) void playSfx("correct");
-        });
-      },
-    },
-    {
-      text: audioPrefs.musicEnabled ? tr.audio.musicOn : tr.audio.musicOff,
-      onPress: () => {
-        void setMusicEnabled(!audioPrefs.musicEnabled).then(next => {
-          setAudioPrefs(next);
-          if (next.musicEnabled) void startLobbyMusic();
-        });
-      },
-    },
-    { text: tr.lobby.signOut, style: "destructive", onPress: () => { void signOut().then(() => router.replace("/")); } },
-  ]);
+  const notificationMenuLabel = unreadCount > 0
+    ? `${tr.notifications.title} (${unreadCount > 99 ? "99+" : unreadCount})`
+    : tr.notifications.title;
+  const openMenuRoute = (pathname: "/notifications" | "/profile" | "/achievements" | "/settings") => {
+    setAccountMenuOpen(false);
+    router.push(pathname as never);
+  };
   const startBotMatch = () => {
     if (!playerId) return;
     router.replace({ pathname: "/match", params: { playerId, matchId: `bot-${playerId}-${Date.now()}`, mode: "bot" } });
@@ -229,7 +213,9 @@ export default function Lobby() {
     <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
       <View pointerEvents="none" style={styles.stadiumGlow}><View style={styles.glowRing} /><View style={styles.glowRingInner} /></View>
       <View style={styles.topbar}>
-        <View accessibilityLabel="Football Link" style={styles.brandBadge}><Text style={styles.brandMark}>FL</Text></View>
+        <Pressable accessibilityRole="button" accessibilityLabel={tr.profile.open} onPress={() => router.push("/profile" as never)} style={({ pressed }) => [styles.brandBadge, pressed && styles.pressed]}>
+          {profile?.avatarUrl ? <Image source={{ uri: profile.avatarUrl }} resizeMode="cover" style={styles.brandAvatar} /> : <Text style={styles.brandMark}>FL</Text>}
+        </Pressable>
         <View style={styles.topbarActions}>
           <CoinPill amount={profile?.coins ?? 0} />
           <DollarPill amount={profile?.dollars ?? 0} />
@@ -240,11 +226,19 @@ export default function Lobby() {
               {!!profile && <Text numberOfLines={1} style={styles.playerCode}>#{profile.playerCode}</Text>}
             </View>
           </Pressable>
-          <Pressable accessibilityRole="button" accessibilityLabel={tr.notifications.title} onPress={() => router.push("/notifications" as never)} style={({ pressed }) => [styles.notificationButton, pressed && styles.pressed]}>
-            <Text style={styles.notificationGlyph}>!</Text>
-            {unreadCount > 0 && <View style={styles.notificationBadge}><Text style={styles.notificationBadgeText}>{unreadCount > 9 ? "9+" : unreadCount}</Text></View>}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={unreadCount > 0 ? `${tr.nav.account}, ${notificationMenuLabel}` : tr.nav.account}
+            onPress={() => setAccountMenuOpen(true)}
+            style={({ pressed }) => [styles.menuButton, pressed && styles.pressed]}
+          >
+            <Ionicons name="ellipsis-horizontal" size={18} color={colors.accent} />
+            {unreadCount > 0 && (
+              <View style={styles.menuBadge}>
+                <Text style={styles.menuBadgeText}>{unreadCount > 9 ? "9+" : unreadCount}</Text>
+              </View>
+            )}
           </Pressable>
-          <Pressable accessibilityRole="button" accessibilityLabel={tr.nav.account} onPress={openAccountMenu} style={({ pressed }) => [styles.menuButton, pressed && styles.pressed]}><Text style={styles.menuDots}>•••</Text></Pressable>
         </View>
       </View>
       <View style={styles.heading}>
@@ -252,7 +246,7 @@ export default function Lobby() {
           <Text style={styles.kicker}>{tr.lobby.kicker}</Text>
           {activePlayers != null && <View style={styles.livePulse}><View style={styles.livePulseDot} /><Text style={styles.livePulseText}>{tr.lobby.activePlayers(activePlayers)}</Text></View>}
         </View>
-        <Text style={styles.title}>{tr.lobby.title}</Text>
+        <Text adjustsFontSizeToFit minimumFontScale={0.84} numberOfLines={1} style={styles.title}>{tr.lobby.title}</Text>
         <View style={styles.headingRule}><View style={styles.headingSpot} /></View>
       </View>
       {eventCard.status === "LIVE" && (
@@ -327,13 +321,130 @@ export default function Lobby() {
       </View>
     </ScrollView>
     </KeyboardAvoidingView>
+    <Modal
+      animationType="fade"
+      onRequestClose={() => setAccountMenuOpen(false)}
+      statusBarTranslucent
+      transparent
+      visible={accountMenuOpen}
+    >
+      <View style={styles.menuOverlay}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={tr.report.cancel}
+          onPress={() => setAccountMenuOpen(false)}
+          style={styles.menuBackdrop}
+        />
+        <View accessibilityViewIsModal style={styles.menuSheet}>
+          <View style={styles.menuHandle} />
+          <View style={styles.menuHeader}>
+            <View style={styles.menuIdentity}>
+              <View style={styles.menuOnline} />
+              <View style={styles.menuIdentityText}>
+                <Text numberOfLines={1} style={styles.menuPlayerName}>{profile?.displayName ?? tr.lobby.noSession}</Text>
+                {!!profile && <Text style={styles.menuPlayerCode}>#{profile.playerCode}</Text>}
+              </View>
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={tr.report.cancel}
+              hitSlop={8}
+              onPress={() => setAccountMenuOpen(false)}
+              style={({ pressed }) => [styles.menuClose, pressed && styles.pressed]}
+            >
+              <Ionicons name="close" size={20} color={colors.muted} />
+            </Pressable>
+          </View>
+
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => openMenuRoute("/notifications")}
+            style={({ pressed }) => [styles.notificationMenuItem, pressed && styles.pressed]}
+          >
+            <View style={styles.notificationMenuIcon}>
+              <Ionicons name={unreadCount > 0 ? "notifications" : "notifications-outline"} size={21} color={colors.primary} />
+            </View>
+            <View style={styles.notificationMenuCopy}>
+              <Text style={styles.notificationMenuTitle}>{tr.notifications.title}</Text>
+              <Text numberOfLines={1} style={styles.notificationMenuMeta}>
+                {unreadCount > 0 ? tr.notifications.unread(unreadCount) : tr.notifications.empty}
+              </Text>
+            </View>
+            {unreadCount > 0 && <View style={styles.notificationMenuCount}><Text style={styles.notificationMenuCountText}>{unreadCount > 99 ? "99+" : unreadCount}</Text></View>}
+            <Ionicons name="chevron-forward" size={18} color={colors.primary} />
+          </Pressable>
+
+          <View style={styles.menuGrid}>
+            <Pressable accessibilityRole="button" onPress={() => openMenuRoute("/profile")} style={({ pressed }) => [styles.menuTile, pressed && styles.pressed]}>
+              <Ionicons name="person-outline" size={20} color={colors.floodlight} />
+              <Text numberOfLines={1} style={styles.menuTileText}>{tr.profile.open}</Text>
+            </Pressable>
+            <Pressable accessibilityRole="button" onPress={() => openMenuRoute("/achievements")} style={({ pressed }) => [styles.menuTile, pressed && styles.pressed]}>
+              <Ionicons name="ribbon-outline" size={20} color={colors.floodlight} />
+              <Text numberOfLines={1} style={styles.menuTileText}>{tr.achievements.menu}</Text>
+            </Pressable>
+            <Pressable accessibilityRole="button" onPress={() => openMenuRoute("/settings")} style={({ pressed }) => [styles.menuTile, pressed && styles.pressed]}>
+              <Ionicons name="options-outline" size={20} color={colors.floodlight} />
+              <Text numberOfLines={1} style={styles.menuTileText}>{tr.settings.open}</Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.audioRow}>
+            <Pressable
+              accessibilityRole="switch"
+              accessibilityState={{ checked: audioPrefs.sfxEnabled }}
+              onPress={() => {
+                void setSfxEnabled(!audioPrefs.sfxEnabled).then(next => {
+                  setAudioPrefs(next);
+                  if (next.sfxEnabled) void playSfx("correct");
+                });
+              }}
+              style={({ pressed }) => [styles.audioButton, audioPrefs.sfxEnabled && styles.audioButtonActive, pressed && styles.pressed]}
+            >
+              <Ionicons name={audioPrefs.sfxEnabled ? "volume-high" : "volume-mute-outline"} size={18} color={audioPrefs.sfxEnabled ? colors.primary : colors.muted} />
+              <Text numberOfLines={1} style={[styles.audioButtonText, audioPrefs.sfxEnabled && styles.audioButtonTextActive]}>{audioPrefs.sfxEnabled ? tr.audio.sfxOn : tr.audio.sfxOff}</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="switch"
+              accessibilityState={{ checked: audioPrefs.musicEnabled }}
+              onPress={() => {
+                void setMusicEnabled(!audioPrefs.musicEnabled).then(next => {
+                  setAudioPrefs(next);
+                  if (next.musicEnabled) void startLobbyMusic();
+                });
+              }}
+              style={({ pressed }) => [styles.audioButton, audioPrefs.musicEnabled && styles.audioButtonActive, pressed && styles.pressed]}
+            >
+              <Ionicons name={audioPrefs.musicEnabled ? "musical-notes" : "musical-notes-outline"} size={18} color={audioPrefs.musicEnabled ? colors.primary : colors.muted} />
+              <Text numberOfLines={1} style={[styles.audioButtonText, audioPrefs.musicEnabled && styles.audioButtonTextActive]}>{audioPrefs.musicEnabled ? tr.audio.musicOn : tr.audio.musicOff}</Text>
+            </Pressable>
+          </View>
+
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => {
+              setAccountMenuOpen(false);
+              void signOut().then(() => router.replace("/"));
+            }}
+            style={({ pressed }) => [styles.signOutButton, pressed && styles.pressed]}
+          >
+            <Ionicons name="log-out-outline" size={18} color={colors.danger} />
+            <Text style={styles.signOutText}>{tr.lobby.signOut}</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
   </SafeAreaView>;
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background }, keyboard: { flex: 1 }, page: { padding: 22, gap: 22, paddingBottom: 116, overflow: "hidden" }, stadiumGlow: { position: "absolute", width: 310, height: 310, borderRadius: 155, top: -190, right: -110, backgroundColor: "rgba(255,243,207,0.035)", alignItems: "center", justifyContent: "center" }, glowRing: { position: "absolute", width: 230, height: 230, borderRadius: 115, borderWidth: 1, borderColor: "rgba(255,243,207,0.07)" }, glowRingInner: { width: 145, height: 145, borderRadius: 73, borderWidth: 1, borderColor: "rgba(255,243,207,0.08)" },
-  topbar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }, topbarActions: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 7 }, brandBadge: { width: 40, height: 40, borderRadius: 12, borderWidth: 1, borderColor: colors.pitchLine, alignItems: "center", justifyContent: "center", backgroundColor: colors.surface }, brandMark: { color: colors.floodlight, fontSize: 11, fontWeight: "900", letterSpacing: 1 }, playerChip: { flexShrink: 1, flexDirection: "row", gap: 7, alignItems: "center", backgroundColor: "rgba(16,34,46,0.88)", borderWidth: 1, borderColor: colors.border, borderRadius: 16, paddingHorizontal: 10, paddingVertical: 7 }, online: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.primary }, playerText: { flexShrink: 1, gap: 1 }, playerName: { color: colors.text, fontWeight: "800", fontSize: 11 }, playerCode: { color: colors.muted, fontWeight: "700", fontSize: 9, letterSpacing: .3 }, notificationButton: { width: 34, height: 34, borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, alignItems: "center", justifyContent: "center" }, notificationGlyph: { color: colors.primary, fontSize: 14, fontWeight: "900" }, notificationBadge: { position: "absolute", minWidth: 16, height: 16, borderRadius: 8, top: -5, right: -5, paddingHorizontal: 3, alignItems: "center", justifyContent: "center", backgroundColor: colors.danger, borderWidth: 1, borderColor: colors.background }, notificationBadgeText: { color: "#FFF", fontSize: 8, fontWeight: "900" }, menuButton: { width: 34, height: 34, borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, alignItems: "center", justifyContent: "center" }, menuDots: { color: colors.accent, fontSize: 10, fontWeight: "900", letterSpacing: 1 },
-  heading: { marginTop: 7 }, headingMeta: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 }, kicker: { flex: 1, color: colors.primary, fontWeight: "900", fontSize: 10, letterSpacing: 2.2 }, livePulse: { flexDirection: "row", alignItems: "center", gap: 6, borderWidth: 1, borderColor: "rgba(89,213,166,.32)", backgroundColor: "rgba(89,213,166,.08)", borderRadius: 999, paddingHorizontal: 9, paddingVertical: 6 }, livePulseDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.primary }, livePulseText: { color: colors.primary, fontSize: 9, fontWeight: "900", letterSpacing: .35 }, title: { color: colors.text, fontSize: 40, lineHeight: 43, fontWeight: "900", letterSpacing: -1.5, marginTop: 10, maxWidth: 320 }, headingRule: { height: 1, backgroundColor: colors.border, marginTop: 18, justifyContent: "center" }, headingSpot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.signal, marginLeft: 26 },
+  topbar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }, topbarActions: { minWidth: 0, flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 7 }, brandBadge: { width: 40, height: 40, borderRadius: 12, borderWidth: 1, borderColor: colors.pitchLine, alignItems: "center", justifyContent: "center", backgroundColor: colors.surface, overflow: "hidden" }, brandAvatar: { width: "100%", height: "100%" }, brandMark: { color: colors.floodlight, fontSize: 11, fontWeight: "900", letterSpacing: 1 }, playerChip: { minWidth: 0, maxWidth: 118, flexShrink: 1, flexDirection: "row", gap: 7, alignItems: "center", backgroundColor: "rgba(16,34,46,0.88)", borderWidth: 1, borderColor: colors.border, borderRadius: 16, paddingHorizontal: 10, paddingVertical: 7 }, online: { flexShrink: 0, width: 7, height: 7, borderRadius: 4, backgroundColor: colors.primary }, playerText: { minWidth: 0, flexShrink: 1, gap: 1 }, playerName: { color: colors.text, fontWeight: "800", fontSize: 11 }, playerCode: { color: colors.muted, fontWeight: "700", fontSize: 9, letterSpacing: .3 }, menuButton: { width: 34, height: 34, borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, alignItems: "center", justifyContent: "center" }, menuBadge: { position: "absolute", minWidth: 16, height: 16, borderRadius: 8, top: -5, right: -5, paddingHorizontal: 3, alignItems: "center", justifyContent: "center", backgroundColor: colors.danger, borderWidth: 1, borderColor: colors.background }, menuBadgeText: { color: "#FFF", fontSize: 8, fontWeight: "900" },
+  menuOverlay: { flex: 1, justifyContent: "flex-end" }, menuBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(2,8,13,.72)" }, menuSheet: { backgroundColor: colors.surfaceElevated, borderTopLeftRadius: 26, borderTopRightRadius: 26, borderWidth: 1, borderBottomWidth: 0, borderColor: colors.border, paddingHorizontal: 20, paddingTop: 10, paddingBottom: Platform.OS === "ios" ? 34 : 24, gap: 14, shadowColor: "#000", shadowOpacity: .42, shadowRadius: 28, shadowOffset: { width: 0, height: -12 }, elevation: 24 }, menuHandle: { alignSelf: "center", width: 38, height: 4, borderRadius: 2, backgroundColor: colors.border, marginBottom: 2 }, menuHeader: { minHeight: 44, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, menuIdentity: { minWidth: 0, flex: 1, flexDirection: "row", alignItems: "center", gap: 9 }, menuOnline: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.primary }, menuIdentityText: { minWidth: 0, flex: 1 }, menuPlayerName: { color: colors.text, fontSize: 16, fontWeight: "900" }, menuPlayerCode: { color: colors.muted, fontSize: 10, fontWeight: "800", marginTop: 2, letterSpacing: .4 }, menuClose: { width: 34, height: 34, borderRadius: 11, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, alignItems: "center", justifyContent: "center" },
+  notificationMenuItem: { minHeight: 66, flexDirection: "row", alignItems: "center", gap: 11, borderRadius: 16, borderWidth: 1, borderColor: "rgba(89,213,166,.42)", backgroundColor: "rgba(89,213,166,.09)", paddingHorizontal: 13, paddingVertical: 11 }, notificationMenuIcon: { width: 36, height: 36, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(89,213,166,.12)" }, notificationMenuCopy: { minWidth: 0, flex: 1 }, notificationMenuTitle: { color: colors.text, fontSize: 14, fontWeight: "900" }, notificationMenuMeta: { color: colors.muted, fontSize: 10, fontWeight: "700", marginTop: 3 }, notificationMenuCount: { minWidth: 24, height: 24, paddingHorizontal: 6, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: colors.danger }, notificationMenuCountText: { color: "#FFF", fontSize: 9, fontWeight: "900" },
+  menuGrid: { flexDirection: "row", gap: 8 }, menuTile: { minWidth: 0, flex: 1, minHeight: 72, borderRadius: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 6 }, menuTileText: { color: colors.text, fontSize: 10, fontWeight: "800", textAlign: "center" },
+  audioRow: { flexDirection: "row", gap: 8 }, audioButton: { minWidth: 0, flex: 1, minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, borderRadius: 13, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, paddingHorizontal: 9 }, audioButtonActive: { borderColor: "rgba(89,213,166,.34)", backgroundColor: "rgba(89,213,166,.07)" }, audioButtonText: { minWidth: 0, flexShrink: 1, color: colors.muted, fontSize: 9, fontWeight: "800" }, audioButtonTextActive: { color: colors.primary }, signOutButton: { minHeight: 46, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: 13, borderWidth: 1, borderColor: "rgba(255,113,108,.25)", backgroundColor: "rgba(255,113,108,.06)" }, signOutText: { color: colors.danger, fontSize: 12, fontWeight: "900" },
+  heading: { marginTop: 3 }, headingMeta: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 }, kicker: { flex: 1, color: colors.primary, fontWeight: "900", fontSize: 10, letterSpacing: 2.2 }, livePulse: { flexShrink: 0, flexDirection: "row", alignItems: "center", gap: 6, borderWidth: 1, borderColor: "rgba(89,213,166,.32)", backgroundColor: "rgba(89,213,166,.08)", borderRadius: 999, paddingHorizontal: 9, paddingVertical: 6 }, livePulseDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.primary }, livePulseText: { color: colors.primary, fontSize: 9, fontWeight: "900", letterSpacing: .35 }, title: { color: colors.text, fontSize: 34, lineHeight: 38, fontWeight: "900", letterSpacing: -1.1, marginTop: 8 }, headingRule: { height: 1, backgroundColor: colors.border, marginTop: 14, justifyContent: "center" }, headingSpot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.signal, marginLeft: 26 },
   quickCard: { backgroundColor: colors.floodlight, borderRadius: 16, minHeight: 104, flexDirection: "row", alignItems: "stretch", overflow: "hidden", shadowColor: "#000", shadowOpacity: .22, shadowRadius: 18, shadowOffset: { width: 0, height: 10 }, elevation: 7 }, signalStrip: { width: 8, backgroundColor: colors.signal }, quickContent: { flex: 1, paddingHorizontal: 17, paddingVertical: 15, justifyContent: "center" }, quickKicker: { color: colors.signal, fontSize: 9, fontWeight: "900", letterSpacing: 1.35, marginBottom: 7 }, quickTitle: { color: colors.ink, fontWeight: "900", fontSize: 20, letterSpacing: -.3 }, quickCopy: { color: colors.ink, opacity: 0.62, fontSize: 12, marginTop: 4 }, rankedCups: { color: colors.ink, opacity: 0.7, fontSize: 11, fontWeight: "800", marginTop: 6 }, quickAction: { width: 54, borderLeftWidth: 1, borderLeftColor: "rgba(8,23,32,.14)", alignItems: "center", justifyContent: "center" }, quickArrow: { color: colors.ink, fontSize: 26 }, queueNote: { color: colors.accent, fontSize: 12, fontWeight: "700", marginTop: -8 },
   blitzCard: { backgroundColor: "#1A1028", borderRadius: 16, minHeight: 104, flexDirection: "row", alignItems: "stretch", overflow: "hidden", borderWidth: 1, borderColor: "#6B4DFF" }, blitzStrip: { width: 8, backgroundColor: "#8B6CFF" }, blitzKicker: { color: "#B896FF", fontSize: 9, fontWeight: "900", letterSpacing: 1.25, marginBottom: 7 }, blitzTitle: { color: colors.floodlight, fontWeight: "900", fontSize: 20, letterSpacing: -.3 }, blitzCopy: { color: colors.muted, fontSize: 12, marginTop: 4 }, blitzCups: { color: "#B896FF", fontSize: 11, fontWeight: "800", marginTop: 6 }, blitzArrow: { color: "#B896FF", fontSize: 22 },
   rankedCard: { backgroundColor: "#241D16", borderRadius: 16, minHeight: 104, flexDirection: "row", alignItems: "stretch", overflow: "hidden", borderWidth: 1, borderColor: "#8F7440" },

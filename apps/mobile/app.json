@@ -15,6 +15,14 @@
       ],
       "expo-notifications",
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "Profil fotoğrafı seçebilmen için fotoğraflarına erişim gerekir.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
+      ],
+      [
         "react-native-google-mobile-ads",
         {
           "androidAppId": "ca-app-pub-3940256099942544~3347511713",
