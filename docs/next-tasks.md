@@ -2,6 +2,19 @@
 
 Güncel durum matrisi: [implementation-status.md](implementation-status.md)
 
+## 26 Temmuz yerel sertleştirme — yayın öncesi
+
+Yapıldı (26 Temmuz): migration geçmişi uzlaştırıldı (`migration repair` — 39 yerel dosya applied, 40 karşılıksız MCP kaydı reverted; `migration list` artık birebir). `20260726082345_harden_client_mutation_boundaries.sql`, `20260726093404_competition_match_summary.sql` ve `20260726114500_friends_weekly_league.sql` `db push` ile production'a uygulandı; ACL/RLS matrisi (friendships/result_reports SELECT-only), özet ve haftalık lig RPC grant'leri canlıda doğrulandı. Haftalık lig RPC'si gerçek hesapla (çağıran + ACCEPTED arkadaş) rollback'li smoke geçti. Queue fence + match receipt içeren Worker deploy edildi (versiyon 62393cc2); canlı bot maçı ve reconnect smoke testleri geçti. Security advisor taramasında yeni bulgu yok.
+
+1. İki cihazda cancel-before-join, geç MATCHED, kayıp yanıt ve maçtan lobiye dönüş senaryolarını doğrula
+2. 50'den fazla WebSocket olaylı maç, reconnect ve dil değişimini küçük/büyük Android cihazda smoke test et
+3. Supabase Auth istemcisindeki implicit/PKCE callback uyumsuzluğunu düzeltip Google, Apple ve e-posta doğrulama deep link'lerini gerçek cihazda test et
+4. Expo zincirindeki 5 yüksek/3 orta transitive advisory'yi güvenli SDK yükseltmesiyle kapat; Expo Doctor sürüm uyumunu 18/18'e getir
+5. Maç özeti: katılımcı/üçüncü kullanıcı erişimini, tur kayıtsız eski maçı, 50+ tur sınırını ve geçmişten sonuç bildirimini iki cihazla; admin rapor bağlamını service-role ve normal kullanıcı rolleriyle smoke test et
+6. Haftalık arkadaş ligi: iki arkadaş cihazında delta/G-M satırlarını, arkadaşsız hesabın boş durumunu ve engellenen oyuncunun listeden düşmesini görsel smoke test et
+7. Profil gizlilik migration'ı (`20260726160000_restrict_profile_private_columns.sql`) production'a uygulandı ve canlı rol smoke'u geçti. Kalan: mobil release sonrası cihazda profil/lobi/lider tablosu ekranlarının `profile_self()` yoluyla doğru yüklendiğini ve dil değişiminin (`preferred_locale` UPDATE) hâlâ çalıştığını doğrula
+8. Engagement paketi cihaz smoke: giriş serisi kartı claim/ertesi gün artışı, haftalık şampiyon ödül kartı, READY H2H satırı, profil ustalık seviyeleri, albüm koleksiyon claim'i, 4 hesapla tam turnuva (davet→yarı final→final→+150) ve seri/şampiyon push bildirimlerinin cihaza düşmesi
+
 ## Phase 1–3 + emotes + audio (kodlandı)
 
 1. Phase 1 album/quests prod migration uygulandı
@@ -35,9 +48,10 @@ Production deploy aşamasına ertelendi: Worker'a güçlü bir `MATCH_TOKEN_SECR
 
 1. Mobil reducer, aktif maç kalıcılığı ve iki cihazlı E2E testleri
 2. İki oyuncunun aynı anda kopması ve alarm idempotency sertleştirmesi
-3. Admin kontrol odasına oyuncu/alias/sözleşme inceleme ve düzenleme ekleme
-4. İmzalı Android kapalı beta AAB, gerçek cihaz matrisi ve çökme takibi
-5. V3 builder için API-Football/Wikidata senkronunu tamamlayıp production oyuncu sayısını en az 5.000'e çıkarma; ardından schema v2 export'u canlı Supabase'e yayınlama
+3. ~~Profil genel okuma yüzeyinden coin/dolar/dil/tutorial alanlarını çıkar~~ (26 Temmuz: `20260726160000_restrict_profile_private_columns.sql` ile `profiles` tablo geneli SELECT kaldırıldı, yalnız oyuncu kartı kolonları grant'lendi; sahibi kendi satırını `profile_self()` SECURITY DEFINER RPC'sinden okuyor). Kalan: avatar URL yerine kullanıcı klasörü doğrulamalı storage path sakla — `avatar_url` hâlâ istemci yazabilir kolon olduğu için keyfi URL yazılabiliyor; düzeltme okuma yüzeylerini de (`player_profile_stats`, `actionable_recent_matches`, `head_to_head_cards` ve avatar render'ı) etkiler
+4. Admin kontrol odasına oyuncu/alias/sözleşme inceleme ve düzenleme ekleme
+5. İmzalı Android kapalı beta AAB, gerçek cihaz matrisi ve çökme takibi
+6. ~~Builder senkronunu tamamlayıp production oyuncu sayısını en az 5.000'e çıkarma; ardından schema v2 export'u canlı Supabase'e yayınlama~~ (26 Temmuz: v4 builder projeye alındı, export production'a yayınlandı — 27.951 oyuncu / 14.311 oynanabilir çift; hedef 5,6 kat aşıldı). Kalan: yeni veri havuzuyla iki cihazda maç kalitesi smoke'u — çok cevaplı çiftlerde tekrar oranı, tanınmayan kulüp adları ve alias kabul hataları
 
 ## P2 — Ürün katmanları
 

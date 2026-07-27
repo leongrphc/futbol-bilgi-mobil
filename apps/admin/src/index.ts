@@ -31,7 +31,7 @@ async function dashboard() {
   const [profiles, matches, reports, versions, imports, contracts, settings, clubs, events, leagues] = await Promise.all([
     adminDb.from("profiles").select("id", { count: "exact", head: true }),
     adminDb.from("matches").select("id", { count: "exact", head: true }),
-    adminDb.from("result_reports").select("id,match_id,round_id,reporter_id,reason_code,detail,status,created_at").order("created_at", { ascending: false }).limit(50),
+    adminDb.rpc("admin_result_report_context", { p_limit: 50 }),
     adminDb.from("football_data_versions").select("id,version_number,status,schema_version,source_export_hash,published_at,created_at").order("created_at", { ascending: false }).limit(12),
     adminDb.from("football_data_import_runs").select("id,source,status,started_at,finished_at,clubs_inserted,players_inserted,memberships_inserted,aliases_inserted,pairs_generated,errors,export_hash").order("started_at", { ascending: false }).limit(12),
     adminDb.from("player_club_contracts").select("id", { count: "exact", head: true }),
@@ -46,7 +46,9 @@ async function dashboard() {
     metrics: {
       players: profiles.count ?? 0,
       matches: matches.count ?? 0,
-      openReports: (reports.data ?? []).filter(item => item.status === "OPEN").length,
+      openReports: (reports.data ?? []).filter(
+        (item: { report_status: string }) => item.report_status === "OPEN",
+      ).length,
       memberships: contracts.count ?? 0,
     },
     reports: reports.data ?? [],
@@ -239,7 +241,21 @@ button{border:0;border-radius:10px;padding:12px 16px;background:var(--turf);colo
 .btn-dim{background:var(--line);color:var(--text)}
 .error{color:#ff716c;font-size:12px}
 .form-row{display:grid;grid-template-columns:1.2fr 1.2fr 1fr auto;gap:8px;padding:14px 18px;border-bottom:1px solid var(--line);align-items:center}
-@media(max-width:800px){.hero,.grid,.form-row{grid-template-columns:1fr}.headline h1{font-size:34px}.shell{padding:16px}}
+.report-card{padding:18px;border-bottom:1px solid var(--line)}
+.report-card:last-child{border-bottom:0}
+.report-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}
+.report-head h3{font-size:15px;margin:0 0 5px}
+.report-meta{color:var(--muted);font:11px ui-monospace,monospace}
+.report-context{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px;margin-top:14px}
+.context-cell{background:var(--ink);border:1px solid var(--line);border-radius:11px;padding:11px;min-width:0}
+.context-cell small{display:block;color:var(--muted);font-size:9px;font-weight:800;letter-spacing:.08em;margin-bottom:5px}
+.context-cell b{display:block;font-size:12px;overflow-wrap:anywhere}
+.report-note{border-left:3px solid var(--signal);margin-top:12px;padding:8px 11px;background:rgba(255,107,61,.08);font-size:12px;overflow-wrap:anywhere}
+.report-note small{display:block;color:var(--signal);font-weight:900;letter-spacing:.06em;margin-bottom:4px}
+.validation{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
+.validation .tag{background:var(--ink)}
+.MISMATCH{color:#ff716c;border-color:#ff716c}
+@media(max-width:800px){.hero,.grid,.form-row,.report-context{grid-template-columns:1fr}.headline h1{font-size:34px}.shell{padding:16px}.report-head{align-items:stretch;flex-direction:column}.report-head select{width:100%}}
 </style>
 </head>
 <body>
@@ -347,11 +363,54 @@ async function loadDashboard() {
       Üyelik: d.metrics.memberships,
     }).map(([k, v]) => '<div class="metric"><b>' + v + "</b><span>" + k + "</span></div>").join("");
     const reports = d.reports.length
-      ? d.reports.map((v) =>
-          '<div class="row"><div><b>' + esc(v.reason_code) + '</b><div class="muted">' + esc(v.detail || "Detay yok") + " · " + esc(new Date(v.created_at).toLocaleString("tr-TR")) + '</div></div><select onchange="setReport(\\'' + esc(v.id) + '\\',this.value)">' +
-          ["OPEN", "REVIEWING", "RESOLVED", "REJECTED"].map((s) => '<option ' + (s === v.status ? "selected" : "") + ">" + s + "</option>").join("") +
-          "</select></div>"
-        ).join("")
+      ? d.reports.map((v) => {
+          const roundLabel = v.round_id === null
+            ? "Maç geneli"
+            : (v.round_context_valid
+              ? "Tur " + esc(v.round_number) + (v.sudden_death ? " · Ani ölüm" : "")
+              : "Tur bağlamı doğrulanamadı");
+          const clubPair = v.round_id === null
+            ? "Maç geneli"
+            : (v.round_context_valid
+              ? esc(v.club_low_name) + " × " + esc(v.club_high_name)
+              : "Eşleşme verisi yok");
+          const storedState = v.stored_correct === true ? "DOĞRU" : (v.stored_correct === false ? "YANLIŞ" : "YOK");
+          const recomputedState = v.recomputed_correct === true ? "DOĞRU" : (v.recomputed_correct === false ? "YANLIŞ" : "YOK");
+          const matchedPlayers = Array.isArray(v.matched_player_names) && v.matched_player_names.length > 0
+            ? v.matched_player_names.map((name) => esc(name)).join(", ") + (v.matched_players_truncated ? " + diğer eşleşmeler" : "")
+            : (v.has_submission ? "Eşleşme yok" : "—");
+          const validationTag = !v.has_submission
+            ? '<span class="tag">CEVAP YOK</span>'
+            : (v.validation_consistent
+              ? '<span class="tag ACTIVE">DOĞRULAMA TUTARLI</span>'
+              : '<span class="tag MISMATCH">DOĞRULAMA UYUŞMAZLIĞI</span>');
+          const participantWarning = !v.reporter_is_participant
+            ? '<div class="report-note"><small>KATILIMCI DOĞRULAMASI BAŞARISIZ</small>Raporlayan oyuncu sunucu kaydında bu maçın katılımcısı değil; bildirimi güvenilir kabul etmeyin.</div>'
+            : "";
+          const roundWarning = v.round_id !== null && !v.round_context_valid
+            ? '<div class="report-note"><small>SUNUCU BAĞLAMI UYARISI</small>Raporlanan tur bu maçla eşleştirilemedi; karar vermeden önce veri kaydını inceleyin.</div>'
+            : "";
+          return '<article class="report-card">' +
+            '<div class="report-head"><div><h3>' + esc(v.reason_code) + '</h3><div class="report-meta">Rapor ' + esc(String(v.report_id).slice(0, 8)) + " · " + esc(new Date(v.reported_at).toLocaleString("tr-TR")) + '</div></div>' +
+            '<select aria-label="Bildirim durumu" onchange="setReport(\\'' + esc(v.report_id) + '\\',this.value)">' +
+            ["OPEN", "REVIEWING", "RESOLVED", "REJECTED"].map((s) => '<option ' + (s === v.report_status ? "selected" : "") + ">" + s + "</option>").join("") +
+            "</select></div>" +
+            '<div class="report-context">' +
+            '<div class="context-cell"><small>RAPORLAYAN</small><b>' + esc(v.reporter_name) + " · #" + esc(v.reporter_code) + "</b></div>" +
+            '<div class="context-cell"><small>MAÇ</small><b>' + esc(v.match_mode) + " · " + esc(v.match_status) + " · " + esc(v.room_key || "oda yok") + "</b></div>" +
+            '<div class="context-cell"><small>TUR</small><b>' + roundLabel + "</b></div>" +
+            '<div class="context-cell"><small>KULÜP ÇİFTİ</small><b>' + clubPair + "</b></div>" +
+            '<div class="context-cell"><small>HAM CEVAP</small><b>' + (v.has_submission ? esc(v.raw_answer) : "—") + "</b></div>" +
+            '<div class="context-cell"><small>NORMALİZE CEVAP</small><b>' + (v.has_submission ? esc(v.normalized_answer) : "—") + "</b></div>" +
+            '<div class="context-cell"><small>EŞLEŞEN OYUNCU</small><b>' + matchedPlayers + "</b></div>" +
+            "</div>" +
+            '<div class="validation"><span class="tag">KAYIT: ' + storedState + '</span><span class="tag">YENİDEN DOĞRULAMA: ' + recomputedState + "</span>" + validationTag +
+            (v.last_second ? '<span class="tag">SON SANİYE</span>' : "") + "</div>" +
+            participantWarning +
+            roundWarning +
+            '<div class="report-note"><small>OYUNCU NOTU · DOĞRULANMAMIŞ GİRDİ</small>' + esc(v.user_detail || "Not eklenmemiş.") + "</div>" +
+            "</article>";
+        }).join("")
       : '<div class="row muted">Bildirim bulunmuyor.</div>';
     appShell.innerHTML =
       '<header class="mast"><div class="brand">FL<i>/</i>CONTROL ROOM</div><div class="live">● PRODUCTION LIVE</div></header>' +

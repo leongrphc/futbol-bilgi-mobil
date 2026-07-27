@@ -796,6 +796,10 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: Json
       }
+      profile_self: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
+      }
       weekly_theme: {
         Args: Record<PropertyKey, never>
         Returns: Json
@@ -942,12 +946,85 @@ export type Database = {
       social_respond_invite: { Args: { p_accept: boolean; p_invite_id: string }; Returns: string }
       social_remove_friend: { Args: { p_friend_id: string }; Returns: undefined }
       social_block_player: { Args: { p_player_id: string }; Returns: undefined }
+      streak_status: { Args: Record<PropertyKey, never>; Returns: Json }
+      streak_claim: { Args: Record<PropertyKey, never>; Returns: Json }
+      weekly_league_reward_status: { Args: Record<PropertyKey, never>; Returns: Json }
+      weekly_league_claim: { Args: Record<PropertyKey, never>; Returns: Json }
+      album_collections_mine: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          claimed: boolean
+          collection_id: string
+          league: string
+          progress: number
+          reward_coins: number
+          target: number
+        }[]
+      }
+      album_collection_claim: { Args: { p_collection_id: string }; Returns: Json }
+      tournament_create: { Args: { p_friend_ids: string[] }; Returns: string }
+      tournament_respond: { Args: { p_accept: boolean; p_tournament_id: string }; Returns: string }
+      tournament_mine: { Args: Record<PropertyKey, never>; Returns: Json }
+      system_enqueue_streak_reminders: { Args: Record<PropertyKey, never>; Returns: number }
+      system_enqueue_weekly_reward_reminders: { Args: Record<PropertyKey, never>; Returns: number }
+      social_friends_weekly_league: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          display_name: string
+          is_me: boolean
+          player_code: string
+          player_id: string
+          weekly_losses: number
+          weekly_matches: number
+          weekly_trophy_delta: number
+          weekly_wins: number
+        }[]
+      }
       social_recent_opponents: { Args: Record<PropertyKey, never>; Returns: { display_name: string; last_played_at: string; player_code: string; player_id: string }[] }
       social_friend_presence: { Args: Record<PropertyKey, never>; Returns: { last_seen_at: string; player_id: string; state: string }[] }
       social_pending_invites: { Args: Record<PropertyKey, never>; Returns: { expires_at: string; invite_id: string; room_key: string; sender_id: string; sender_name: string; status: string }[] }
       competition_my_history: {
         Args: Record<PropertyKey, never>
         Returns: { finished_at: string; friend_state: string; match_id: string; mode: string; opponent_code: string; opponent_id: string; opponent_name: string; outcome: string; score_against: number; score_for: number; trophy_delta: number | null }[]
+      }
+      competition_match_summary: {
+        Args: { p_match_id: string }
+        Returns: Json
+      }
+      admin_result_report_context: {
+        Args: { p_limit?: number }
+        Returns: {
+          club_high_id: string | null
+          club_high_name: string | null
+          club_low_id: string | null
+          club_low_name: string | null
+          has_submission: boolean
+          last_second: boolean | null
+          match_id: string
+          match_mode: string
+          match_status: string
+          matched_player_names: string[] | null
+          matched_players_truncated: boolean | null
+          normalized_answer: string | null
+          raw_answer: string | null
+          reason_code: string
+          recomputed_correct: boolean | null
+          report_id: string
+          report_status: string
+          reported_at: string
+          reporter_code: string
+          reporter_id: string
+          reporter_is_participant: boolean
+          reporter_name: string
+          room_key: string | null
+          round_context_valid: boolean
+          round_id: string | null
+          round_number: number | null
+          stored_correct: boolean | null
+          sudden_death: boolean | null
+          user_detail: string | null
+          validation_consistent: boolean | null
+        }[]
       }
       competition_leaderboard: {
         Args: Record<PropertyKey, never>

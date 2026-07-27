@@ -9,11 +9,23 @@ import { useAuth } from "@/auth/auth-context";
 import { locale, tr } from "@/i18n";
 import { supabase } from "@/auth/supabase";
 import { DailyQuestsCard } from "@/quests/DailyQuestsCard";
+import { LoginStreakCard } from "@/streak/LoginStreakCard";
+import { SectionLabel } from "@/theme/SectionLabel";
 import { CoinPill, DollarPill } from "@/economy/CoinPill";
 import { getAudioPrefsSync, loadAudioPrefs, setMusicEnabled, setSfxEnabled, subscribeAudioPrefs, type AudioPrefs } from "@/audio/preferences";
 import { playSfx, startLobbyMusic } from "@/audio/sounds";
 import { useLanguage } from "@/language/language-provider";
 import { useNotifications } from "@/notifications/notification-provider";
+import { saveActiveMatch } from "@/match/active-match";
+import { requestQueueAction, startQueueSearch, type QueueKind, type QueueSearchController, type QueueSearchOutcome } from "@/match/queue-search";
+
+type ActiveQueueRun = {
+  kind: QueueKind;
+  requestId: string;
+  cancelled: boolean;
+  controller?: QueueSearchController;
+  task?: Promise<void>;
+};
 
 export default function Lobby() {
   useLanguage();
@@ -41,17 +53,28 @@ export default function Lobby() {
     accent?: string;
     clubCount?: number;
   }>({ status: "NONE" });
-  const quickTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const blitzTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const rankedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const eventTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const mountedRef = useRef(true);
+  const activeQueueRef = useRef<ActiveQueueRun | undefined>(undefined);
+  const matchCommittedRef = useRef(false);
   const queueRegion = locale === "tr" ? "TR" : "EU";
   useEffect(() => { if (invitedRoom?.trim()) setRoom(invitedRoom.trim()); }, [invitedRoom]);
   useEffect(() => {
     void loadAudioPrefs().then(setAudioPrefs);
     return subscribeAudioPrefs(setAudioPrefs);
   }, []);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      const active = activeQueueRef.current;
+      if (!active) return;
+      active.cancelled = true;
+      active.controller?.cancel();
+    };
+  }, []);
   useFocusEffect(useCallback(() => {
+    // A fresh lobby focus starts a new queue session after returning from a committed match.
+    matchCommittedRef.current = false;
     let alive = true;
     const loadActivePlayers = async () => {
       await supabase.rpc("social_set_presence", { p_state: "ONLINE" });
@@ -118,10 +141,56 @@ export default function Lobby() {
   const joinRoom = () => { if (playerId && room.trim()) router.replace({ pathname: "/match", params: { playerId, matchId: room.trim() } }); };
   const createRoom = () => { const id = globalThis.crypto?.randomUUID?.().replaceAll("-", "").slice(0, 12) ?? `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`; setRoom(id.toLowerCase()); setRoomCreated(true); };
   const shareInvite = async () => { if (!room.trim()) return; const url = Linking.createURL("lobby", { queryParams: { room: room.trim() } }); await Share.share({ title: tr.lobby.inviteTitle, message: tr.lobby.inviteMessage(url), url }); };
-  const anyQueueBusy = quickBusy || blitzBusy || rankedBusy || eventBusy;
-  const runQueue = async (kind: "quick" | "blitz" | "ranked" | "event") => {
+  const setQueueBusy = (kind: QueueKind, busy: boolean) => {
+    if (kind === "quick") setQuickBusy(busy);
+    else if (kind === "blitz") setBlitzBusy(busy);
+    else if (kind === "ranked") setRankedBusy(busy);
+    else setEventBusy(busy);
+  };
+  const handleQueueOutcome = async (active: ActiveQueueRun, outcome: QueueSearchOutcome) => {
+    if (outcome.type === "MATCHED") {
+      matchCommittedRef.current = true;
+      await saveActiveMatch({ playerId, matchId: outcome.matchId, mode: active.kind }).catch(() => undefined);
+      if (!mountedRef.current || activeQueueRef.current !== active) return;
+      setQueueBusy(active.kind, false);
+      setQueueNote(undefined);
+      void playSfx("match_found");
+      router.replace({ pathname: "/match", params: { playerId, matchId: outcome.matchId, mode: active.kind } });
+      return;
+    }
+    if (!mountedRef.current || activeQueueRef.current !== active) return;
+    setQueueBusy(active.kind, false);
+    if (outcome.type === "CANCELLED") {
+      setQueueNote(outcome.cooldownMs > 0
+        ? tr.quick.cooldown(Math.max(1, Math.ceil(outcome.cooldownMs / 1000)))
+        : undefined);
+      return;
+    }
+    if (outcome.type === "NO_EVENT") {
+      setEventCard({ status: "NONE" });
+      setQueueNote(tr.event.noEvent);
+      return;
+    }
+    if (outcome.type === "RANKED_LOCKED") {
+      setRankedProgress(old => ({ ...old, unlocked: false }));
+      setQueueNote(tr.ranked.locked(rankedProgress.completed, Number(outcome.requiredQuickMatches ?? rankedProgress.required)));
+      return;
+    }
+    if (outcome.type === "COOLDOWN") {
+      setQueueNote(tr.quick.cooldown(Math.max(1, Math.ceil(outcome.cooldownMs / 1000))));
+      return;
+    }
+    setQueueNote(outcome.reason === "AUTH" ? tr.connection.noSession : tr.auth.errors.fallback);
+  };
+  const runQueue = async (kind: QueueKind) => {
+    if (matchCommittedRef.current) return;
+    const previous = activeQueueRef.current;
+    if (previous) {
+      if (!previous.cancelled) return;
+      await previous.task;
+      if (!mountedRef.current || matchCommittedRef.current || activeQueueRef.current) return;
+    }
     if (!playerId) return;
-    if (anyQueueBusy) return;
     if (kind === "event" && eventCard.status !== "LIVE") {
       setQueueNote(tr.event.noEvent);
       return;
@@ -130,83 +199,64 @@ export default function Lobby() {
       setQueueNote(tr.ranked.locked(rankedProgress.completed, rankedProgress.required));
       return;
     }
-    if (kind === "quick") setQuickBusy(true);
-    else if (kind === "blitz") setBlitzBusy(true);
-    else if (kind === "ranked") setRankedBusy(true);
-    else setEventBusy(true);
+    const requestId = globalThis.crypto?.randomUUID?.()
+      ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+    const active: ActiveQueueRun = { kind, requestId, cancelled: false };
+    activeQueueRef.current = active;
+    setQueueBusy(kind, true);
     setQueueNote(undefined);
-    const session = await supabase.auth.getSession(); const token = session.data.session?.access_token;
-    const base = (process.env.EXPO_PUBLIC_MATCH_SERVER_URL ?? "ws://localhost:8787").replace(/^wss:/, "https:").replace(/^ws:/, "http:");
-    const path = kind === "blitz" ? "/blitz-match" : kind === "ranked" ? "/ranked-match" : kind === "event" ? "/event-match" : "/quick-match";
-    const timerRef = kind === "blitz" ? blitzTimer : kind === "ranked" ? rankedTimer : kind === "event" ? eventTimer : quickTimer;
-    const setBusy = kind === "blitz" ? setBlitzBusy : kind === "ranked" ? setRankedBusy : kind === "event" ? setEventBusy : setQuickBusy;
-    const poll = async () => {
-      if (!token) { setBusy(false); return; }
+
+    const task = (async () => {
       try {
-        const response = await fetch(`${base}${path}`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "join", region: queueRegion }),
+        const session = await supabase.auth.getSession();
+        const token = session.data.session?.access_token;
+        if (active.cancelled || !mountedRef.current) return;
+        if (!token) {
+          if (mountedRef.current && activeQueueRef.current === active) {
+            setQueueBusy(kind, false);
+            setQueueNote(tr.connection.noSession);
+          }
+          return;
+        }
+
+        const baseUrl = (process.env.EXPO_PUBLIC_MATCH_SERVER_URL ?? "ws://localhost:8787").replace(/^wss:/, "https:").replace(/^ws:/, "http:");
+        const path = kind === "blitz" ? "/blitz-match" : kind === "ranked" ? "/ranked-match" : kind === "event" ? "/event-match" : "/quick-match";
+        const controller = startQueueSearch({
+          join: () => requestQueueAction({ action: "join", baseUrl, path, region: queueRegion, requestId: active.requestId, token }),
+          cancel: () => requestQueueAction({ action: "cancel", baseUrl, path, region: queueRegion, requestId: active.requestId, token }),
+          onRetry: () => {
+            if (mountedRef.current && activeQueueRef.current === active && !active.cancelled) {
+              setQueueNote(tr.connection.unreachable);
+            }
+          },
+          onWaiting: result => {
+            if (!mountedRef.current || activeQueueRef.current !== active || active.cancelled) return;
+            setQueueNote(kind !== "event" && result.band != null ? tr.quick.band(String(result.band)) : undefined);
+          },
         });
-        const result = await response.json() as { status?: string; match_id?: string; cooldown_ms?: number; band?: number | string; required_quick_matches?: number };
-        if (result.status === "MATCHED" && result.match_id) {
-          setBusy(false);
-          setQueueNote(undefined);
-          void playSfx("match_found");
-          router.replace({ pathname: "/match", params: { playerId, matchId: result.match_id, mode: kind } });
-          return;
+        active.controller = controller;
+        if (active.cancelled || !mountedRef.current) controller.cancel();
+        await handleQueueOutcome(active, await controller.done);
+      } catch {
+        if (mountedRef.current && activeQueueRef.current === active && !active.cancelled) {
+          setQueueBusy(kind, false);
+          setQueueNote(tr.auth.errors.fallback);
         }
-        if (result.status === "NO_EVENT") {
-          setBusy(false);
-          setEventCard({ status: "NONE" });
-          setQueueNote(tr.event.noEvent);
-          return;
-        }
-        if (result.status === "RANKED_LOCKED") {
-          setBusy(false);
-          setRankedProgress(old => ({ ...old, unlocked: false }));
-          setQueueNote(tr.ranked.locked(rankedProgress.completed, Number(result.required_quick_matches ?? rankedProgress.required)));
-          return;
-        }
-        if (result.status === "COOLDOWN") {
-          setBusy(false);
-          const seconds = Math.max(1, Math.ceil(Number(result.cooldown_ms ?? 0) / 1000));
-          setQueueNote(tr.quick.cooldown(seconds));
-          return;
-        }
-        if (result.status === "WAITING" && result.band != null && kind !== "event") {
-          setQueueNote(tr.quick.band(String(result.band)));
-        }
-      } catch { /* next poll keeps the queue interaction resilient to transient network errors */ }
-      timerRef.current = setTimeout(() => { void poll(); }, 2_000);
-    };
-    await poll();
+      } finally {
+        if (activeQueueRef.current === active) activeQueueRef.current = undefined;
+      }
+    })();
+    active.task = task;
+    await task;
   };
-  const cancelQueue = async (kind: "quick" | "blitz" | "ranked" | "event") => {
-    const timerRef = kind === "blitz" ? blitzTimer : kind === "ranked" ? rankedTimer : kind === "event" ? eventTimer : quickTimer;
-    if (timerRef.current) clearTimeout(timerRef.current);
-    if (kind === "blitz") setBlitzBusy(false);
-    else if (kind === "ranked") setRankedBusy(false);
-    else if (kind === "event") setEventBusy(false);
-    else setQuickBusy(false);
+  const cancelQueue = (kind: QueueKind) => {
+    const active = activeQueueRef.current;
+    if (!active || active.kind !== kind) return;
+    active.cancelled = true;
+    active.controller?.cancel();
+    setQueueBusy(kind, false);
     setQueueNote(undefined);
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
-    if (!token) return;
-    const base = (process.env.EXPO_PUBLIC_MATCH_SERVER_URL ?? "ws://localhost:8787").replace(/^wss:/, "https:").replace(/^ws:/, "http:");
-    const path = kind === "blitz" ? "/blitz-match" : kind === "ranked" ? "/ranked-match" : kind === "event" ? "/event-match" : "/quick-match";
-    try {
-      const response = await fetch(`${base}${path}`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ action: "cancel" }) });
-      const result = await response.json() as { cooldown_ms?: number };
-      if (result.cooldown_ms) setQueueNote(tr.quick.cooldown(Math.max(1, Math.ceil(result.cooldown_ms / 1000))));
-    } catch { /* cancel best-effort */ }
   };
-  useEffect(() => () => {
-    if (quickTimer.current) clearTimeout(quickTimer.current);
-    if (blitzTimer.current) clearTimeout(blitzTimer.current);
-    if (rankedTimer.current) clearTimeout(rankedTimer.current);
-    if (eventTimer.current) clearTimeout(eventTimer.current);
-  }, []);
 
   return <SafeAreaView style={styles.safe}>
     <KeyboardAvoidingView style={styles.keyboard} behavior={Platform.OS === "ios" ? "padding" : "height"}>
@@ -249,6 +299,7 @@ export default function Lobby() {
         <Text adjustsFontSizeToFit minimumFontScale={0.84} numberOfLines={1} style={styles.title}>{tr.lobby.title}</Text>
         <View style={styles.headingRule}><View style={styles.headingSpot} /></View>
       </View>
+      <SectionLabel label={tr.lobby.sectionPlay} tone={colors.primary} />
       {eventCard.status === "LIVE" && (
         <Pressable
           accessibilityRole="button"
@@ -286,7 +337,7 @@ export default function Lobby() {
           <Text style={styles.rankedCopy}>{rankedBusy ? tr.ranked.cancel : rankedProgress.unlocked ? tr.ranked.copy : tr.ranked.locked(rankedProgress.completed, rankedProgress.required)}</Text>
           {!!profile && <Text style={styles.rankedModeCups}>{profile.rankedTrophies} {tr.common.rankedTrophies}</Text>}
         </View>
-        <View style={styles.rankedAction}>{rankedBusy ? <ActivityIndicator color="#F3C969" /> : <Text style={styles.rankedArrow}>✦</Text>}</View>
+        <View style={styles.rankedAction}>{rankedBusy ? <ActivityIndicator color={colors.ranked} /> : <Text style={styles.rankedArrow}>✦</Text>}</View>
       </Pressable>
       <Pressable accessibilityRole="button" onPress={() => { void (blitzBusy ? cancelQueue("blitz") : runQueue("blitz")); }} style={({ pressed }) => [styles.blitzCard, pressed && styles.pressed]}>
         <View style={styles.blitzStrip} />
@@ -299,19 +350,21 @@ export default function Lobby() {
         <View style={styles.quickAction}>{blitzBusy ? <ActivityIndicator color={colors.floodlight} /> : <Text style={styles.blitzArrow}>⚡</Text>}</View>
       </Pressable>
       {!!queueNote && !quickBusy && !blitzBusy && !rankedBusy && !eventBusy && <Text style={styles.queueNote}>{queueNote}</Text>}
+      <SectionLabel label={tr.lobby.sectionToday} tone={colors.reward} />
+      <LoginStreakCard />
       <DailyQuestsCard />
       <Pressable accessibilityRole="button" onPress={() => router.push("/album")} style={({ pressed }) => [styles.albumCard, pressed && styles.pressed]}>
         <Text style={styles.albumKicker}>{tr.album.kicker}</Text>
         <Text style={styles.albumTitle}>{tr.album.openCta}</Text>
         <Text style={styles.albumCopy}>{tr.album.note}</Text>
       </Pressable>
+      <SectionLabel label={tr.lobby.sectionSocial} />
       <Pressable accessibilityRole="button" accessibilityLabel={tr.lobby.botA11y} onPress={startBotMatch} style={({ pressed }) => [styles.hero, pressed && styles.pressed]}>
         <View pointerEvents="none" style={styles.pitch}><View style={styles.pitchCircle} /><View style={styles.pitchHalf} /></View>
         <View style={styles.heroTop}><View style={styles.trainingMark}><View style={styles.trainingDot} /><Text style={styles.trainingLabel}>{tr.ranked.unranked}</Text></View><View style={styles.testBadge}><Text style={styles.testBadgeText}>{tr.lobby.recommended}</Text></View></View>
         <Text style={styles.heroTitle}>{tr.lobby.botTitle}</Text><Text style={styles.heroCopy}>{tr.ranked.botCopy}</Text>
         <View style={styles.heroAction}><Text style={styles.heroActionText}>{tr.lobby.botAction}</Text><Text style={styles.heroArrow}>→</Text></View>
       </Pressable>
-      <View style={styles.divider}><View style={styles.rule} /><Text style={styles.or}>{tr.ranked.unranked}</Text><View style={styles.rule} /></View>
       <View style={styles.roomCard}>
         <Text style={styles.roomTitle}>{tr.lobby.roomTitle}</Text><Text style={styles.roomCopy}>{tr.ranked.friendCopy}</Text>
         <TextInput accessibilityLabel={tr.lobby.roomCode} value={room} onChangeText={setRoom} autoCapitalize="none" autoCorrect={false} returnKeyType="go" onSubmitEditing={joinRoom} placeholder="dev-room" placeholderTextColor={colors.muted} style={styles.input} />
@@ -446,16 +499,16 @@ const styles = StyleSheet.create({
   audioRow: { flexDirection: "row", gap: 8 }, audioButton: { minWidth: 0, flex: 1, minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, borderRadius: 13, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, paddingHorizontal: 9 }, audioButtonActive: { borderColor: "rgba(89,213,166,.34)", backgroundColor: "rgba(89,213,166,.07)" }, audioButtonText: { minWidth: 0, flexShrink: 1, color: colors.muted, fontSize: 9, fontWeight: "800" }, audioButtonTextActive: { color: colors.primary }, signOutButton: { minHeight: 46, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: 13, borderWidth: 1, borderColor: "rgba(255,113,108,.25)", backgroundColor: "rgba(255,113,108,.06)" }, signOutText: { color: colors.danger, fontSize: 12, fontWeight: "900" },
   heading: { marginTop: 3 }, headingMeta: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 }, kicker: { flex: 1, color: colors.primary, fontWeight: "900", fontSize: 10, letterSpacing: 2.2 }, livePulse: { flexShrink: 0, flexDirection: "row", alignItems: "center", gap: 6, borderWidth: 1, borderColor: "rgba(89,213,166,.32)", backgroundColor: "rgba(89,213,166,.08)", borderRadius: 999, paddingHorizontal: 9, paddingVertical: 6 }, livePulseDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.primary }, livePulseText: { color: colors.primary, fontSize: 9, fontWeight: "900", letterSpacing: .35 }, title: { color: colors.text, fontSize: 34, lineHeight: 38, fontWeight: "900", letterSpacing: -1.1, marginTop: 8 }, headingRule: { height: 1, backgroundColor: colors.border, marginTop: 14, justifyContent: "center" }, headingSpot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.signal, marginLeft: 26 },
   quickCard: { backgroundColor: colors.floodlight, borderRadius: 16, minHeight: 104, flexDirection: "row", alignItems: "stretch", overflow: "hidden", shadowColor: "#000", shadowOpacity: .22, shadowRadius: 18, shadowOffset: { width: 0, height: 10 }, elevation: 7 }, signalStrip: { width: 8, backgroundColor: colors.signal }, quickContent: { flex: 1, paddingHorizontal: 17, paddingVertical: 15, justifyContent: "center" }, quickKicker: { color: colors.signal, fontSize: 9, fontWeight: "900", letterSpacing: 1.35, marginBottom: 7 }, quickTitle: { color: colors.ink, fontWeight: "900", fontSize: 20, letterSpacing: -.3 }, quickCopy: { color: colors.ink, opacity: 0.62, fontSize: 12, marginTop: 4 }, rankedCups: { color: colors.ink, opacity: 0.7, fontSize: 11, fontWeight: "800", marginTop: 6 }, quickAction: { width: 54, borderLeftWidth: 1, borderLeftColor: "rgba(8,23,32,.14)", alignItems: "center", justifyContent: "center" }, quickArrow: { color: colors.ink, fontSize: 26 }, queueNote: { color: colors.accent, fontSize: 12, fontWeight: "700", marginTop: -8 },
-  blitzCard: { backgroundColor: "#1A1028", borderRadius: 16, minHeight: 104, flexDirection: "row", alignItems: "stretch", overflow: "hidden", borderWidth: 1, borderColor: "#6B4DFF" }, blitzStrip: { width: 8, backgroundColor: "#8B6CFF" }, blitzKicker: { color: "#B896FF", fontSize: 9, fontWeight: "900", letterSpacing: 1.25, marginBottom: 7 }, blitzTitle: { color: colors.floodlight, fontWeight: "900", fontSize: 20, letterSpacing: -.3 }, blitzCopy: { color: colors.muted, fontSize: 12, marginTop: 4 }, blitzCups: { color: "#B896FF", fontSize: 11, fontWeight: "800", marginTop: 6 }, blitzArrow: { color: "#B896FF", fontSize: 22 },
-  rankedCard: { backgroundColor: "#241D16", borderRadius: 16, minHeight: 104, flexDirection: "row", alignItems: "stretch", overflow: "hidden", borderWidth: 1, borderColor: "#8F7440" },
-  rankedStrip: { width: 8, backgroundColor: "#F3C969" },
-  rankedKicker: { color: "#F3C969", fontSize: 9, fontWeight: "900", letterSpacing: 1.25, marginBottom: 7 },
+  blitzCard: { backgroundColor: colors.blitzDeep, borderRadius: 16, minHeight: 104, flexDirection: "row", alignItems: "stretch", overflow: "hidden", borderWidth: 1, borderColor: colors.blitz }, blitzStrip: { width: 8, backgroundColor: "#8B6CFF" }, blitzKicker: { color: colors.blitzSoft, fontSize: 9, fontWeight: "900", letterSpacing: 1.25, marginBottom: 7 }, blitzTitle: { color: colors.floodlight, fontWeight: "900", fontSize: 20, letterSpacing: -.3 }, blitzCopy: { color: colors.muted, fontSize: 12, marginTop: 4 }, blitzCups: { color: colors.blitzSoft, fontSize: 11, fontWeight: "800", marginTop: 6 }, blitzArrow: { color: colors.blitzSoft, fontSize: 22 },
+  rankedCard: { backgroundColor: colors.rankedDeep, borderRadius: 16, minHeight: 104, flexDirection: "row", alignItems: "stretch", overflow: "hidden", borderWidth: 1, borderColor: "#8F7440" },
+  rankedStrip: { width: 8, backgroundColor: colors.ranked },
+  rankedKicker: { color: colors.ranked, fontSize: 9, fontWeight: "900", letterSpacing: 1.25, marginBottom: 7 },
   rankedTitle: { color: "#FFF7E3", fontWeight: "900", fontSize: 20, letterSpacing: -.3 },
   rankedCopy: { color: "#C8BFAE", fontSize: 12, lineHeight: 17, marginTop: 4 },
-  rankedModeCups: { color: "#F3C969", fontSize: 11, fontWeight: "800", marginTop: 7 },
+  rankedModeCups: { color: colors.ranked, fontSize: 11, fontWeight: "800", marginTop: 7 },
   rankedAction: { width: 54, borderLeftWidth: 1, borderLeftColor: "rgba(243,201,105,.22)", alignItems: "center", justifyContent: "center" },
-  rankedArrow: { color: "#F3C969", fontSize: 24 },
-  albumCard: { backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, padding: 16, gap: 6 }, albumKicker: { color: colors.accent, fontSize: 10, fontWeight: "900", letterSpacing: 1.4 }, albumTitle: { color: colors.text, fontSize: 18, fontWeight: "900" }, albumCopy: { color: colors.muted, fontSize: 13, lineHeight: 18 },
+  rankedArrow: { color: colors.ranked, fontSize: 24 },
+  albumCard: { backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, padding: 16, gap: 6 }, albumKicker: { color: colors.accent, fontSize: 10, fontWeight: "900", letterSpacing: 1.4 }, albumTitle: { color: colors.text, fontSize: 17, fontWeight: "800", letterSpacing: -0.2 }, albumCopy: { color: colors.muted, fontSize: 13, lineHeight: 18 },
   eventLiveCard: { backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1.5, padding: 16, gap: 6 },
   eventLiveKicker: { fontSize: 10, fontWeight: "900", letterSpacing: 1.4 },
   eventLiveTitle: { color: colors.text, fontSize: 22, fontWeight: "900", letterSpacing: -0.4 },

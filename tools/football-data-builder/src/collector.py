@@ -180,6 +180,102 @@ def _insert_evidence(
     )
 
 
+# Wikidata P54 ilişkisi güven modelinde 70 puandır (DATA_COLLECTION_ARCHITECTURE.md).
+WIKIDATA_MEMBERSHIP_CONFIDENCE = 70
+
+# SQLite varsayılan SQLITE_MAX_VARIABLE_NUMBER sınırının altında kalan parça boyutu.
+_SQL_BATCH = 500
+
+
+def insert_wikidata_evidence(
+    conn: sqlite3.Connection,
+    *,
+    player_id: int,
+    club_id: int,
+    membership_id: int | None,
+    player_qid: str,
+    club_qid: str | None,
+    payload: dict[str, Any],
+) -> None:
+    """Wikidata P54 üyeliği için kaynak kanıtı yaz.
+
+    Kanıt, SPARQL sonucunun kendisinden üretilir; yeni bir iddia uydurulmaz.
+    """
+    _insert_evidence(
+        conn,
+        player_id=player_id,
+        club_id=club_id,
+        membership_id=membership_id,
+        source="WIKIDATA",
+        evidence_type="P54_MEMBERSHIP",
+        source_url=f"https://www.wikidata.org/wiki/{player_qid}",
+        source_revision=club_qid or "",
+        confidence=WIKIDATA_MEMBERSHIP_CONFIDENCE,
+        payload=payload,
+    )
+
+
+def backfill_wikidata_evidence(conn: sqlite3.Connection) -> dict[str, int]:
+    """Kanıtsız kalmış eski Wikidata üyeliklerine kaynak kanıtı üret.
+
+    Üyeliğin `source_payload` alanında saklanan SPARQL satırı kullanılır; ağa
+    çıkılmaz ve kayıtta olmayan hiçbir ilişki eklenmez.
+    """
+    rows = conn.execute(
+        """
+        SELECT m.id membership_id, m.player_id, m.club_id, m.source_payload,
+               p.wikidata_qid player_qid, c.wikidata_qid club_qid
+        FROM memberships m
+        JOIN players p ON p.id=m.player_id
+        JOIN clubs c ON c.id=m.club_id
+        LEFT JOIN source_evidence se
+               ON se.membership_id=m.id AND se.source='WIKIDATA'
+        WHERE m.source='WIKIDATA'
+          AND m.status!='REJECTED'
+          AND p.wikidata_qid IS NOT NULL
+          AND p.wikidata_qid NOT LIKE 'DEMO-%'
+          AND se.id IS NULL
+        """
+    ).fetchall()
+
+    written = 0
+    membership_ids: list[int] = []
+    for row in rows:
+        try:
+            payload = json.loads(row["source_payload"]) if row["source_payload"] else {}
+        except (TypeError, ValueError):
+            payload = {}
+        if not isinstance(payload, dict):
+            payload = {"raw": payload}
+        insert_wikidata_evidence(
+            conn,
+            player_id=int(row["player_id"]),
+            club_id=int(row["club_id"]),
+            membership_id=int(row["membership_id"]),
+            player_qid=str(row["player_qid"]),
+            club_qid=row["club_qid"],
+            payload=payload,
+        )
+        membership_ids.append(int(row["membership_id"]))
+        written += 1
+        if written % 500 == 0:
+            conn.commit()
+
+    for start in range(0, len(membership_ids), _SQL_BATCH):
+        batch = membership_ids[start:start + _SQL_BATCH]
+        marks = ",".join("?" for _ in batch)
+        conn.execute(
+            f"""
+            UPDATE memberships
+            SET confidence=MAX(confidence, ?), updated_at=CURRENT_TIMESTAMP
+            WHERE id IN ({marks})
+            """,
+            [WIKIDATA_MEMBERSHIP_CONFIDENCE, *batch],
+        )
+    conn.commit()
+    return {"evidence_written": written}
+
+
 def _upsert_membership(
     conn: sqlite3.Connection,
     *,
@@ -455,24 +551,29 @@ def auto_verify_by_evidence(
         (min_confidence, min_sources),
     ).fetchall()
     ids = [int(row["id"]) for row in rows]
-    if ids:
-        marks = ",".join("?" for _ in ids)
+    # SQLite'ın parametre sınırı nedeniyle güncellemeler parçalara bölünür.
+    player_ids: set[int] = set()
+    for start in range(0, len(ids), _SQL_BATCH):
+        batch = ids[start:start + _SQL_BATCH]
+        marks = ",".join("?" for _ in batch)
         conn.execute(
             f"UPDATE memberships SET status='VERIFIED', updated_at=CURRENT_TIMESTAMP WHERE id IN ({marks})",
-            ids,
+            batch,
         )
-        player_ids = [
+        player_ids.update(
             int(row["player_id"])
             for row in conn.execute(
-                f"SELECT DISTINCT player_id FROM memberships WHERE id IN ({marks})", ids
+                f"SELECT DISTINCT player_id FROM memberships WHERE id IN ({marks})", batch
             )
-        ]
-        if player_ids:
-            pmarks = ",".join("?" for _ in player_ids)
-            conn.execute(
-                f"UPDATE players SET status='VERIFIED', updated_at=CURRENT_TIMESTAMP WHERE id IN ({pmarks})",
-                player_ids,
-            )
+        )
+    ordered_players = sorted(player_ids)
+    for start in range(0, len(ordered_players), _SQL_BATCH):
+        batch = ordered_players[start:start + _SQL_BATCH]
+        pmarks = ",".join("?" for _ in batch)
+        conn.execute(
+            f"UPDATE players SET status='VERIFIED', updated_at=CURRENT_TIMESTAMP WHERE id IN ({pmarks})",
+            batch,
+        )
     conn.commit()
     rebuild_pair_stats(conn)
     return {"verified_memberships": len(ids)}

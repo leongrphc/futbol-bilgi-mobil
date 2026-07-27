@@ -9,13 +9,15 @@ import { colors } from "@/theme/colors";
 import { locale, tr } from "@/i18n";
 import { useAuth } from "@/auth/auth-context";
 import { loadPlayerProfileStats, type CompetitiveMode, type PlayerProfileStats } from "@/profile/api";
+import { supabase } from "@/auth/supabase";
+import { buildMasteryStandings, type MasteryRow, type MasteryStanding, type MasteryTier } from "@/profile/mastery-model";
 import { AvatarUploadError, uploadProfileAvatar } from "@/profile/avatar";
 import { useLanguage } from "@/language/language-provider";
 
 const modeColors: Record<CompetitiveMode, string> = {
   QUICK: colors.primary,
-  BLITZ: "#B896FF",
-  RANKED: "#F3C969",
+  BLITZ: colors.blitzSoft,
+  RANKED: colors.ranked,
   EVENT: colors.accent,
 };
 
@@ -28,12 +30,18 @@ export default function Profile() {
   const [avatarPreview, setAvatarPreview] = useState<string>();
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
+  const [mastery, setMastery] = useState<MasteryStanding[]>([]);
+
   const refresh = useCallback(async () => {
     setLoading(true);
     setError(undefined);
-    const result = await loadPlayerProfileStats();
+    const [result, masteryResult] = await Promise.all([
+      loadPlayerProfileStats(),
+      supabase.rpc("mastery_mine", { p_limit: 6 }),
+    ]);
     setStats(result.stats.profile.playerId ? result.stats : undefined);
     setError(result.error);
+    if (!masteryResult.error) setMastery(buildMasteryStandings((masteryResult.data ?? []) as MasteryRow[]));
     setLoading(false);
   }, []);
 
@@ -188,6 +196,24 @@ export default function Profile() {
             {stats.collections.bestClub ? <View style={styles.bestClubRow}><View style={styles.clubMark}><Text style={styles.clubMarkText}>FC</Text></View><View style={styles.bestClubCopy}><Text style={styles.bestClubName}>{stats.collections.bestClub.name}</Text><Text style={styles.bestClubMeta}>{tr.profile.bestClubMeta(stats.collections.bestClub.correct, stats.collections.bestClub.accuracy)}</Text></View></View> : <Text style={styles.empty}>{tr.profile.noBestClub}</Text>}
           </View>
 
+          <SectionTitle title={tr.mastery.title} />
+          <View style={styles.masteryCard}>
+            {mastery.length ? mastery.map(item => (
+              <View key={item.clubExternalId} style={styles.masteryRow}>
+                <View style={[styles.masteryBadge, masteryBadgeStyle(item.tier)]}>
+                  <Text style={[styles.masteryBadgeText, masteryBadgeTextStyle(item.tier)]}>{tr.mastery.tierNames[item.tier]}</Text>
+                </View>
+                <View style={styles.masteryMeta}>
+                  <Text numberOfLines={1} style={styles.masteryClub}>{item.clubName}</Text>
+                  <Text style={styles.masteryDetail}>
+                    {tr.mastery.correct(item.correct)} · {item.nextTierAt == null ? tr.mastery.max : tr.mastery.next(item.nextTierAt - item.correct)}
+                  </Text>
+                  <View style={styles.masteryTrack}><View style={[styles.masteryFill, { width: `${Math.round(item.progress * 100)}%` }, masteryFillStyle(item.tier)]} /></View>
+                </View>
+              </View>
+            )) : <Text style={styles.empty}>{tr.mastery.empty}</Text>}
+          </View>
+
           <SectionTitle title={tr.profile.achievements} trailing={tr.profile.achievementCount(stats.achievements.unlocked, stats.achievements.total)} />
           <Pressable accessibilityRole="button" onPress={() => router.push("/achievements" as never)} style={({ pressed }) => [styles.achievementCard, pressed && styles.pressed]}>
             {stats.achievements.showcase.length ? <View style={styles.showcaseRow}>{stats.achievements.showcase.map(item => <View key={item.code} style={styles.showcaseItem}><View style={[styles.showcaseBadge, { borderColor: item.accent, backgroundColor: `${item.accent}18` }]}><Text style={[styles.showcaseGlyph, { color: item.accent }]}>{item.glyph}</Text></View><Text numberOfLines={2} style={styles.showcaseTitle}>{locale === "tr" ? item.reward_title_tr : item.reward_title_en}</Text></View>)}</View> : <Text style={styles.empty}>{tr.profile.emptyShowcase}</Text>}
@@ -219,6 +245,25 @@ function modeName(mode: CompetitiveMode): string {
 
 function modeShort(mode: CompetitiveMode): string {
   return mode === "QUICK" ? "Q" : mode === "BLITZ" ? "B" : mode === "RANKED" ? "R" : "E";
+}
+
+const masteryTierColors: Record<MasteryTier, string> = {
+  NONE: "#5E6A75",
+  BRONZE: "#C98A5A",
+  SILVER: "#B9C4CF",
+  GOLD: colors.reward,
+};
+
+function masteryBadgeStyle(tier: MasteryTier) {
+  return { borderColor: masteryTierColors[tier], backgroundColor: `${masteryTierColors[tier]}18` };
+}
+
+function masteryBadgeTextStyle(tier: MasteryTier) {
+  return { color: masteryTierColors[tier] };
+}
+
+function masteryFillStyle(tier: MasteryTier) {
+  return { backgroundColor: masteryTierColors[tier] };
 }
 
 function avatarErrorMessage(error: unknown): string {
@@ -277,9 +322,9 @@ const styles = StyleSheet.create({
   stat: { width: "31%", flexGrow: 1, minHeight: 94, backgroundColor: colors.surface, borderRadius: 15, borderWidth: 1, borderColor: colors.border, padding: 13, justifyContent: "space-between" },
   statValue: { fontSize: 25, fontWeight: "900", fontVariant: ["tabular-nums"] },
   statLabel: { color: colors.muted, fontSize: 10, lineHeight: 13, fontWeight: "700" },
-  streakCard: { flexDirection: "row", alignItems: "stretch", backgroundColor: "#241D16", borderRadius: 16, borderWidth: 1, borderColor: "#8F7440", padding: 15 },
+  streakCard: { flexDirection: "row", alignItems: "stretch", backgroundColor: colors.rankedDeep, borderRadius: 16, borderWidth: 1, borderColor: "#8F7440", padding: 15 },
   streakItem: { flex: 1, flexDirection: "row", gap: 10, alignItems: "center" },
-  streakGlyph: { color: "#F3C969", fontSize: 23, fontWeight: "900" },
+  streakGlyph: { color: colors.ranked, fontSize: 23, fontWeight: "900" },
   streakValue: { color: "#FFF7E3", fontSize: 23, fontWeight: "900" },
   streakLabel: { color: "#C8BFAE", fontSize: 9, lineHeight: 12, maxWidth: 92 },
   verticalRule: { width: 1, backgroundColor: "rgba(243,201,105,.22)", marginHorizontal: 13 },
@@ -296,6 +341,15 @@ const styles = StyleSheet.create({
   recordValue: { color: colors.text, fontSize: 25, fontWeight: "900", marginTop: 6 },
   recordLabel: { color: colors.muted, fontSize: 9, lineHeight: 12, fontWeight: "700", marginTop: 4 },
   collectionCard: { backgroundColor: "#0C1B25", borderRadius: 17, borderWidth: 1, borderColor: "#3B5260", padding: 16, gap: 14 },
+  masteryCard: { backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, padding: 14, gap: 12 },
+  masteryRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+  masteryBadge: { width: 58, borderRadius: 8, borderWidth: 1, paddingVertical: 5, alignItems: "center" },
+  masteryBadgeText: { fontSize: 9, fontWeight: "900", letterSpacing: 0.6 },
+  masteryMeta: { flex: 1, minWidth: 0, gap: 3 },
+  masteryClub: { color: colors.text, fontWeight: "900", fontSize: 13 },
+  masteryDetail: { color: colors.muted, fontSize: 10, fontWeight: "700" },
+  masteryTrack: { height: 4, borderRadius: 2, backgroundColor: colors.background, overflow: "hidden", marginTop: 2 },
+  masteryFill: { height: 4, borderRadius: 2 },
   collectionCounts: { flexDirection: "row", gap: 40 },
   collectionValue: { color: colors.floodlight, fontSize: 28, fontWeight: "900" },
   collectionLabel: { color: colors.muted, fontSize: 10, fontWeight: "700" },

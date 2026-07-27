@@ -127,15 +127,18 @@ export default function PlayerCardScreen() {
               </View>
             </View>
             <Text style={styles.publicNote}>{tr.playerCard.publicNote}</Text>
+            {!!card.h2h && (card.h2h.wins > 0 || card.h2h.losses > 0) && (
+              <View style={styles.h2hChip}><Text style={styles.h2hText}>{tr.h2h.label(card.h2h.wins, card.h2h.losses)}</Text></View>
+            )}
           </View>
 
           <SectionTitle title={tr.playerCard.trophies} />
           <View style={styles.trophyBoard}>
             <TrophyCell label={tr.competition.quickLadder} value={card.trophies} tone={colors.primary} />
             <View style={styles.verticalRule} />
-            <TrophyCell label={tr.competition.blitzLadder} value={card.blitzTrophies} tone="#B896FF" />
+            <TrophyCell label={tr.competition.blitzLadder} value={card.blitzTrophies} tone={colors.blitzSoft} />
             <View style={styles.verticalRule} />
-            <TrophyCell label={tr.competition.rankedLadder} value={card.rankedTrophies} tone="#F3C969" />
+            <TrophyCell label={tr.competition.rankedLadder} value={card.rankedTrophies} tone={colors.ranked} />
           </View>
 
           <SectionTitle title={tr.playerCard.form} />
@@ -209,6 +212,8 @@ const styles = StyleSheet.create({
   name: { color: colors.text, fontSize: 27, lineHeight: 30, fontWeight: "900", letterSpacing: -.8 },
   code: { color: colors.accent, fontSize: 11, fontWeight: "900", letterSpacing: 1.1 },
   publicNote: { color: colors.muted, fontSize: 10, lineHeight: 15, borderTopWidth: 1, borderTopColor: "rgba(89,213,166,.16)", paddingTop: 12 },
+  h2hChip: { alignSelf: "flex-start", borderRadius: 999, borderWidth: 1, borderColor: colors.reward, backgroundColor: "rgba(255,180,84,.10)", paddingHorizontal: 11, paddingVertical: 6 },
+  h2hText: { color: colors.reward, fontSize: 11, fontWeight: "900" },
   sectionTitleRow: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 2 },
   sectionTitle: { color: colors.muted, fontSize: 10, fontWeight: "900", letterSpacing: 1.35 },
   sectionLine: { flex: 1, height: 1, backgroundColor: colors.border },

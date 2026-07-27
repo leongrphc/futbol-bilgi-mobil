@@ -1,6 +1,6 @@
 import { useCallback, useState, type ReactNode } from "react";
 import { router, useFocusEffect } from "expo-router";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "@/auth/supabase";
 import { useAuth } from "@/auth/auth-context";
@@ -8,25 +8,45 @@ import { tr } from "@/i18n";
 import { useLanguage } from "@/language/language-provider";
 import { colors } from "@/theme/colors";
 import { createFriendRoomKey, friendErrorMessage } from "@/friends/social-actions";
+import { buildFriendsLeague, formatWeeklyDelta, type FriendsLeagueRow, type FriendsLeagueStanding } from "@/friends/friends-league-model";
+import { TournamentCard } from "@/friends/TournamentCard";
 
 type Friend = { friend_id: string; display_name: string; player_code: string; trophies: number; status: "PENDING" | "ACCEPTED"; direction: "INCOMING" | "OUTGOING"; created_at: string };
 type Recent = { player_id: string; display_name: string; player_code: string; last_played_at: string };
 
 export default function Friends() {
   useLanguage();
-  const { profile } = useAuth();
+  const { profile, refreshProfile } = useAuth();
   const [friends, setFriends] = useState<Friend[]>([]);
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [presence, setPresence] = useState<Record<string, string>>({});
   const [recent, setRecent] = useState<Recent[]>([]);
   const [loadError, setLoadError] = useState("");
+  const [league, setLeague] = useState<FriendsLeagueStanding[]>([]);
+  const [leagueError, setLeagueError] = useState(false);
+  const [reward, setReward] = useState<{ claimable: boolean; claimed: boolean }>();
+  const [rewardBusy, setRewardBusy] = useState(false);
   const load = useCallback(async () => {
-    const [list, states, opponents] = await Promise.all([supabase.rpc("social_list_friends"), supabase.rpc("social_friend_presence"), supabase.rpc("social_recent_opponents")]);
+    const [list, states, opponents, weekly, rewardStatus] = await Promise.all([supabase.rpc("social_list_friends"), supabase.rpc("social_friend_presence"), supabase.rpc("social_recent_opponents"), supabase.rpc("social_friends_weekly_league"), supabase.rpc("weekly_league_reward_status")]);
     if (list.error) setLoadError(friendErrorMessage(list.error)); else { setFriends((list.data ?? []) as Friend[]); setLoadError(""); }
     if (!states.error) setPresence(Object.fromEntries((states.data ?? []).map(item => [item.player_id, item.state])));
     if (!opponents.error) setRecent((opponents.data ?? []) as Recent[]);
+    if (weekly.error) setLeagueError(true); else { setLeague(buildFriendsLeague((weekly.data ?? []) as FriendsLeagueRow[])); setLeagueError(false); }
+    if (!rewardStatus.error) {
+      const value = rewardStatus.data as { claimable?: boolean; claimed?: boolean } | null;
+      setReward({ claimable: value?.claimable === true, claimed: value?.claimed === true });
+    }
   }, []);
+  const claimWeeklyReward = async () => {
+    if (rewardBusy) return;
+    setRewardBusy(true);
+    const { error } = await supabase.rpc("weekly_league_claim");
+    setRewardBusy(false);
+    if (error) { Alert.alert(tr.weeklyReward.claimFailed); return; }
+    await refreshProfile();
+    await load();
+  };
   useFocusEffect(useCallback(() => { void load(); const timer = setInterval(() => { void load(); }, 5_000); return () => clearInterval(timer); }, [load]));
   const add = async () => {
     if (!code.trim() || busy) return;
@@ -62,8 +82,51 @@ export default function Friends() {
     {!!profile && <View style={styles.myCode}><Text style={styles.myCodeLabel}>{tr.friends.yourCode}</Text><Text selectable style={styles.myCodeValue}>#{profile.playerCode}</Text></View>}
     {!!loadError && <Pressable accessibilityRole="button" onPress={() => { void load(); }} style={styles.loadError}><Text style={styles.loadErrorText}>{loadError} · {tr.friends.retry}</Text></Pressable>}
     <View style={styles.addCard}><TextInput accessibilityLabel={tr.friends.addPlaceholder} value={code} onChangeText={setCode} autoCapitalize="characters" autoCorrect={false} placeholder={tr.friends.addPlaceholder} placeholderTextColor={colors.muted} returnKeyType="send" onSubmitEditing={() => { void add(); }} style={styles.input} /><Pressable accessibilityRole="button" disabled={!code.trim() || busy} onPress={() => { void add(); }} style={({ pressed }) => [styles.addButton, (!code.trim() || busy) && styles.disabled, pressed && styles.pressed]}><Text style={styles.addText}>{tr.friends.add}</Text></Pressable></View>
+    {!!reward && (reward.claimable || reward.claimed) && (
+      <View style={[styles.rewardCard, reward.claimed && styles.rewardCardClaimed]}>
+        <View style={styles.identity}>
+          <Text style={styles.rewardKicker}>{tr.weeklyReward.kicker}</Text>
+          <Text style={styles.rewardTitle}>{reward.claimed ? tr.weeklyReward.claimed : tr.weeklyReward.champion}</Text>
+        </View>
+        {reward.claimable && (
+          <Pressable accessibilityRole="button" disabled={rewardBusy} onPress={() => { void claimWeeklyReward(); }} style={({ pressed }) => [styles.rewardClaim, pressed && styles.pressed, rewardBusy && styles.disabled]}>
+            <Text style={styles.rewardClaimText}>{rewardBusy ? "…" : tr.weeklyReward.claim}</Text>
+          </Pressable>
+        )}
+      </View>
+    )}
+    <Section title={tr.friends.league.title}>
+      <Text style={styles.leagueNote}>{tr.friends.league.note}</Text>
+      {leagueError ? (
+        <Pressable accessibilityRole="button" onPress={() => { void load(); }} style={styles.loadError}><Text style={styles.loadErrorText}>{tr.friends.league.error} · {tr.friends.league.retry}</Text></Pressable>
+      ) : league.length > 1 ? league.map(standing => (
+        <Pressable
+          key={standing.playerId}
+          accessibilityRole="button"
+          onPress={() => { if (!standing.isMe) router.push({ pathname: "/player-card", params: { playerId: standing.playerId } } as never); }}
+          style={({ pressed }) => [styles.leagueRow, standing.isMe && styles.leagueMe, pressed && !standing.isMe && styles.pressed]}
+        >
+          <Text style={[styles.leagueRank, standing.rank === 1 && styles.leagueLeader]}>{standing.rank}</Text>
+          <View style={styles.identity}>
+            <Text style={styles.name} numberOfLines={1}>{standing.displayName}{standing.isMe ? ` · ${tr.friends.league.you}` : ""}</Text>
+            <Text style={styles.meta}>#{standing.playerCode} · {tr.friends.league.record(standing.wins, standing.losses)}</Text>
+          </View>
+          <Text style={[styles.leagueDelta, standing.trophyDelta > 0 ? styles.leagueUp : standing.trophyDelta < 0 ? styles.leagueDown : undefined]}>{formatWeeklyDelta(standing.trophyDelta)}</Text>
+        </Pressable>
+      )) : <Text style={styles.empty}>{tr.friends.league.empty}</Text>}
+    </Section>
+    <TournamentCard acceptedFriends={accepted.map(friend => ({ friend_id: friend.friend_id, display_name: friend.display_name }))} />
     {!!incoming.length && <Section title={tr.friends.pending}>{incoming.map(friend => <FriendRow key={friend.friend_id} friend={friend}><Pressable accessibilityRole="button" onPress={() => { void respond(friend.friend_id, true); }} style={styles.accept}><Text style={styles.acceptText}>{tr.friends.accept}</Text></Pressable><Pressable accessibilityRole="button" onPress={() => { void respond(friend.friend_id, false); }} style={styles.decline}><Text style={styles.declineText}>{tr.friends.decline}</Text></Pressable></FriendRow>)}</Section>}
-    <Section title={tr.lobby.friends}>{accepted.length ? accepted.map(friend => <FriendRow key={friend.friend_id} friend={friend} presence={presence[friend.friend_id]}><Pressable accessibilityRole="button" onPress={() => { void invite(friend); }} style={styles.invite}><Text style={styles.inviteText}>{tr.friends.invite}</Text></Pressable><Pressable accessibilityRole="button" onPress={() => manage(friend)}><Text style={styles.moreText}>•••</Text></Pressable></FriendRow>) : <Text style={styles.empty}>{tr.friends.empty}</Text>}</Section>
+    <Section title={tr.lobby.friends}>{accepted.length ? accepted.map(friend => <FriendRow key={friend.friend_id} friend={friend} presence={presence[friend.friend_id]}><Pressable accessibilityRole="button" onPress={() => { void invite(friend); }} style={styles.invite}><Text style={styles.inviteText}>{tr.friends.invite}</Text></Pressable><Pressable accessibilityRole="button" onPress={() => manage(friend)}><Text style={styles.moreText}>•••</Text></Pressable></FriendRow>) : (
+      <View style={styles.emptyBlock}>
+        <Text style={styles.empty}>{tr.friends.empty}</Text>
+        {!!profile && (
+          <Pressable accessibilityRole="button" onPress={() => { void Share.share({ message: `Football Link · #${profile.playerCode}` }); }} style={({ pressed }) => [styles.emptyCta, pressed && styles.pressed]}>
+            <Text style={styles.emptyCtaText}>{tr.friends.emptyCta} →</Text>
+          </Pressable>
+        )}
+      </View>
+    )}</Section>
     {!!outgoing.length && <Section title={tr.friends.outgoing}>{outgoing.map(friend => <FriendRow key={friend.friend_id} friend={friend}><Text style={styles.outgoing}>{tr.friends.outgoing}</Text></FriendRow>)}</Section>}
     {!!recent.length && <Section title={tr.social.recent}>{recent.map(item => <View key={item.player_id} style={styles.recent}><Text style={styles.name}>{item.display_name}</Text><Text style={styles.meta}>#{item.player_code}</Text></View>)}</Section>}
   </ScrollView></SafeAreaView>;
@@ -73,6 +136,9 @@ function Section({ title, children }: { title: string; children: ReactNode }) { 
 function FriendRow({ friend, presence, children }: { friend: Friend; presence?: string; children: ReactNode }) { const status = presence === "IN_MATCH" ? tr.social.inMatch : presence === "ONLINE" ? tr.social.online : tr.social.offline; return <View style={styles.friend}><View style={styles.avatar}><Text style={styles.avatarText}>{friend.display_name.slice(0, 1).toUpperCase()}</Text></View><View style={styles.identity}><Text style={styles.name}>{friend.display_name}</Text><Text style={styles.meta}>#{friend.player_code} · {friend.trophies} {tr.common.trophies}</Text>{presence !== undefined && <Text style={[styles.presence, presence === "ONLINE" && styles.presenceOnline]}>{status}</Text>}</View><View style={styles.actions}>{children}</View></View>; }
 
 const styles = StyleSheet.create({
+  emptyBlock: { gap: 0, backgroundColor: colors.surface, borderRadius: 13, overflow: "hidden" }, emptyCta: { borderTopWidth: 1, borderTopColor: colors.border, minHeight: 46, alignItems: "center", justifyContent: "center" }, emptyCtaText: { color: colors.primary, fontSize: 12, fontWeight: "800" },
+  rewardCard: { flexDirection: "row", alignItems: "center", gap: 10, borderRadius: 14, borderWidth: 1, borderColor: colors.reward, backgroundColor: "rgba(255,180,84,.08)", padding: 14 }, rewardCardClaimed: { borderColor: colors.border, backgroundColor: colors.surface }, rewardKicker: { color: colors.reward, fontSize: 10, fontWeight: "900", letterSpacing: 1.2 }, rewardTitle: { color: colors.text, fontWeight: "900", marginTop: 3, fontSize: 13 }, rewardClaim: { borderRadius: 10, backgroundColor: colors.reward, paddingHorizontal: 12, paddingVertical: 10 }, rewardClaimText: { color: colors.background, fontSize: 11, fontWeight: "900" },
+  leagueNote: { color: colors.muted, fontSize: 11, lineHeight: 16 }, leagueRow: { minHeight: 56, flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: colors.surface, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, borderWidth: 1, borderColor: colors.border }, leagueMe: { borderColor: colors.accent }, leagueRank: { color: colors.muted, width: 22, fontWeight: "900", textAlign: "center" }, leagueLeader: { color: colors.primary }, leagueDelta: { color: colors.muted, fontWeight: "900", fontSize: 16 }, leagueUp: { color: colors.primary }, leagueDown: { color: colors.danger },
   presence: { color: colors.muted, fontSize: 9, fontWeight: "800", marginTop: 3 }, presenceOnline: { color: colors.primary }, moreText: { color: colors.muted, fontWeight: "900", padding: 8 }, recent: { flexDirection: "row", justifyContent: "space-between", backgroundColor: colors.surface, borderRadius: 11, padding: 12, borderWidth: 1, borderColor: colors.border },
   safe: { flex: 1, backgroundColor: colors.background }, page: { padding: 22, paddingBottom: 116, gap: 20 }, kicker: { color: colors.primary, fontSize: 11, fontWeight: "900", letterSpacing: 1.7 }, title: { color: colors.text, fontSize: 35, lineHeight: 39, fontWeight: "900", letterSpacing: -1.1 }, myCode: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 14, paddingVertical: 11, backgroundColor: colors.surfaceElevated, borderRadius: 12, borderWidth: 1, borderColor: colors.border }, myCodeLabel: { color: colors.muted, fontSize: 10, fontWeight: "900", letterSpacing: 1 }, myCodeValue: { color: colors.floodlight, fontWeight: "900", letterSpacing: 1.2 }, loadError: { backgroundColor: "#3A2025", borderRadius: 10, padding: 12 }, loadErrorText: { color: colors.danger, fontSize: 12, fontWeight: "800" }, addCard: { flexDirection: "row", gap: 8, backgroundColor: colors.surface, padding: 10, borderRadius: 15, borderWidth: 1, borderColor: colors.border }, input: { flex: 1, minWidth: 0, color: colors.text, backgroundColor: colors.background, paddingHorizontal: 12, borderRadius: 9, fontWeight: "700" }, addButton: { justifyContent: "center", paddingHorizontal: 13, borderRadius: 9, backgroundColor: colors.primary }, addText: { color: colors.background, fontWeight: "900", fontSize: 12 }, section: { gap: 8 }, sectionTitle: { color: colors.muted, fontSize: 10, fontWeight: "900", letterSpacing: 1.2 }, empty: { color: colors.muted, backgroundColor: colors.surface, borderRadius: 13, padding: 16, lineHeight: 20 }, friend: { minHeight: 68, flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: colors.surface, borderRadius: 13, padding: 11, borderWidth: 1, borderColor: colors.border }, avatar: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center", backgroundColor: colors.primary }, avatarText: { color: colors.background, fontWeight: "900" }, identity: { flex: 1, minWidth: 0 }, name: { color: colors.text, fontWeight: "900", fontSize: 14 }, meta: { color: colors.muted, marginTop: 3, fontSize: 11 }, actions: { flexDirection: "row", gap: 6, alignItems: "center" }, accept: { paddingHorizontal: 9, paddingVertical: 8, borderRadius: 8, backgroundColor: colors.primary }, acceptText: { color: colors.background, fontWeight: "900", fontSize: 11 }, decline: { paddingHorizontal: 8, paddingVertical: 8 }, declineText: { color: colors.muted, fontWeight: "800", fontSize: 11 }, invite: { paddingHorizontal: 9, paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: colors.accent }, inviteText: { color: colors.accent, fontWeight: "900", fontSize: 10 }, outgoing: { color: colors.muted, fontWeight: "800", fontSize: 11 }, disabled: { opacity: 0.45 }, pressed: { opacity: 0.8 },
 });

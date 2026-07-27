@@ -28,6 +28,36 @@ interface AuthState {
 
 const AuthContext = createContext<AuthState | null>(null);
 
+const asCount = (value: unknown): number => {
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.trunc(parsed) : 0;
+};
+
+const asText = (value: unknown): string | null => (typeof value === "string" ? value : null);
+
+// The wallet, locale and tutorial columns are no longer table-readable, so the
+// owner's full profile comes from the profile_self RPC as a jsonb payload.
+export function normalizeProfile(raw: unknown): Profile | null {
+  if (!raw || typeof raw !== "object") return null;
+  const row = raw as Record<string, unknown>;
+  const id = asText(row.id);
+  if (!id) return null;
+  const locale = row.preferred_locale;
+  return {
+    id,
+    displayName: asText(row.display_name) ?? "Player",
+    playerCode: asText(row.player_code) ?? "",
+    preferredLocale: locale === "tr" || locale === "en" ? locale : null,
+    avatarUrl: asText(row.avatar_url),
+    trophies: asCount(row.trophies),
+    blitzTrophies: asCount(row.blitz_trophies),
+    rankedTrophies: asCount(row.ranked_trophies),
+    coins: asCount(row.coins),
+    dollars: asCount(row.dollars),
+    tutorialCompletedAt: asText(row.tutorial_completed_at),
+  };
+}
+
 export function AuthProvider({ children }: PropsWithChildren) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -35,9 +65,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
   const loadProfile = async (activeSession: Session | null) => {
     if (!activeSession) { setProfile(null); return; }
-    const { data, error } = await supabase.from("profiles").select("id,display_name,player_code,preferred_locale,avatar_url,trophies,blitz_trophies,ranked_trophies,coins,dollars,tutorial_completed_at").eq("id", activeSession.user.id).single();
+    const { data, error } = await supabase.rpc("profile_self");
     if (error) { setProfile(null); return; }
-    setProfile({ id: data.id, displayName: data.display_name, playerCode: data.player_code, preferredLocale: data.preferred_locale === "tr" || data.preferred_locale === "en" ? data.preferred_locale : null, avatarUrl: data.avatar_url, trophies: data.trophies, blitzTrophies: data.blitz_trophies ?? 0, rankedTrophies: data.ranked_trophies ?? 0, coins: data.coins ?? 0, dollars: data.dollars ?? 0, tutorialCompletedAt: data.tutorial_completed_at });
+    setProfile(normalizeProfile(data));
   };
 
   useEffect(() => {

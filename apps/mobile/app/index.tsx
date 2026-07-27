@@ -138,6 +138,7 @@ export default function Login() {
         keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
         automaticallyAdjustKeyboardInsets={false}
       >
+        <View pointerEvents="none" style={styles.floodGlow}><View style={styles.floodRing} /><View style={styles.floodRingInner} /></View>
         <View style={styles.brand}>
           <View style={styles.brandTop}>
             <Text style={styles.kicker}>{tr.auth.kicker}</Text>
@@ -148,6 +149,11 @@ export default function Login() {
           <Text style={styles.title}>{tr.auth.title}{"\n"}<Text style={styles.titleAccent}>{tr.auth.titleAccent}</Text></Text>
           <View style={styles.pitchLine}><View style={styles.centerSpot} /></View>
           <Text style={styles.lead}>{tr.auth.lead}</Text>
+          <View style={styles.modeStrip}>
+            <View style={[styles.modeChip, { borderColor: "rgba(89,213,166,.4)" }]}><Text style={[styles.modeChipText, { color: colors.quick }]}>QUICK</Text></View>
+            <View style={[styles.modeChip, { borderColor: "rgba(139,108,255,.4)" }]}><Text style={[styles.modeChipText, { color: colors.blitzSoft }]}>BLITZ</Text></View>
+            <View style={[styles.modeChip, { borderColor: "rgba(243,201,105,.4)" }]}><Text style={[styles.modeChipText, { color: colors.ranked }]}>RANKED</Text></View>
+          </View>
         </View>
 
         <View style={styles.form}>
@@ -171,4 +177,10 @@ const styles = StyleSheet.create({
   form: { gap: 10, paddingBottom: 10, marginBottom: 10 }, tabs: { flexDirection: "row", padding: 4, borderRadius: 12, backgroundColor: colors.surface, marginBottom: 4 }, tab: { flex: 1, paddingVertical: 11, alignItems: "center", borderRadius: 9 }, tabActive: { backgroundColor: colors.surfaceElevated }, tabText: { color: colors.muted, fontWeight: "800" }, tabTextActive: { color: colors.text }, input: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, color: colors.text, paddingHorizontal: 16, paddingVertical: 14, borderRadius: 11, fontSize: 16 },
   button: { marginTop: 3, backgroundColor: colors.primary, minHeight: 54, borderRadius: 11, paddingHorizontal: 17, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, buttonText: { color: colors.background, fontSize: 16, fontWeight: "900" }, arrow: { color: colors.background, fontSize: 23 }, error: { color: colors.danger, fontSize: 13, lineHeight: 18 }, notice: { color: colors.primary, fontSize: 13, lineHeight: 18 }, socialDivider: { flexDirection: "row", alignItems: "center", gap: 11, marginVertical: 5 }, rule: { height: 1, backgroundColor: colors.border, flex: 1 }, or: { color: colors.muted, fontSize: 9, fontWeight: "900", letterSpacing: 1.2 }, socialRow: { flexDirection: "row", gap: 10 }, socialButton: { flex: 1, minHeight: 49, borderRadius: 11, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 9 }, socialMark: { color: colors.accent, fontWeight: "900", fontSize: 15 }, socialText: { color: colors.text, fontWeight: "800" },
   pressed: { opacity: 0.82, transform: [{ scale: 0.99 }] }, disabled: { opacity: 0.45 },
+  floodGlow: { position: "absolute", width: 340, height: 340, borderRadius: 170, top: -170, right: -130, backgroundColor: "rgba(255,243,207,0.04)", alignItems: "center", justifyContent: "center" },
+  floodRing: { position: "absolute", width: 250, height: 250, borderRadius: 125, borderWidth: 1, borderColor: "rgba(255,243,207,0.08)" },
+  floodRingInner: { width: 155, height: 155, borderRadius: 78, borderWidth: 1, borderColor: "rgba(89,213,166,0.10)" },
+  modeStrip: { flexDirection: "row", gap: 8, marginTop: 18 },
+  modeChip: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7, backgroundColor: "rgba(16,34,46,.6)" },
+  modeChipText: { fontSize: 9, fontWeight: "900", letterSpacing: 1.3 },
 });

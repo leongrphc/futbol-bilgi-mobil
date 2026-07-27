@@ -73,7 +73,7 @@ export function DailyQuestsCard() {
 const styles = StyleSheet.create({
   card: { backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, padding: 16, gap: 10 },
   kicker: { color: colors.primary, fontSize: 10, fontWeight: "900", letterSpacing: 1.4 },
-  title: { color: colors.text, fontSize: 18, fontWeight: "900" },
+  title: { color: colors.text, fontSize: 17, fontWeight: "800", letterSpacing: -0.2 },
   empty: { color: colors.muted, fontSize: 13 },
   error: { color: colors.danger, fontWeight: "700" },
   row: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: colors.background, borderRadius: 12, padding: 12 },
@@ -81,7 +81,7 @@ const styles = StyleSheet.create({
   questMeta: { flexDirection: "row", alignItems: "center", gap: 8 },
   questTitle: { color: colors.text, fontWeight: "800", fontSize: 13 },
   progress: { color: colors.muted, fontSize: 11, fontWeight: "700" },
-  reward: { color: "#F4C95D", fontSize: 10, fontWeight: "900" },
+  reward: { color: colors.reward, fontSize: 10, fontWeight: "900" },
   chip: { minWidth: 72, borderRadius: 999, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 10, paddingVertical: 7, alignItems: "center" },
   chipClaim: { backgroundColor: colors.primary, borderColor: colors.primary },
   chipClaimed: { borderColor: colors.primary },

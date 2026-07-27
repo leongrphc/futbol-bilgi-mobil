@@ -23,7 +23,63 @@ export class MatchEngine {
   startAnswering(deadline:number) { this.state.phase="ANSWERING"; this.state.deadline=deadline; this.state.submissions.clear(); }
   submit(playerId:string,raw:string,receivedAt:number,answers:ReadonlySet<string>) { this.assertPhase("ANSWERING"); this.assertPlayer(playerId); if(this.state.deadline===null||receivedAt>this.state.deadline) throw new Error("ANSWER_DEADLINE_PASSED"); if(this.state.submissions.has(playerId)) throw new Error("ALREADY_SUBMITTED"); const normalized=normalizeAnswer(raw); if(!normalized) throw new Error("EMPTY_ANSWER"); const submission={playerId,raw,normalized,receivedAt,sequence:++this.state.sequence,correct:answers.has(normalized)}; this.state.submissions.set(playerId,submission); return submission; }
   reveal(): {roundWinnerId:string|null; finished:boolean; suddenDeath:boolean} { this.state.phase="REVEAL"; const correct=[...this.state.submissions.values()].filter(s=>s.correct).sort((a,b)=>a.sequence-b.sequence); const roundWinnerId=correct[0]?.playerId??null; if(roundWinnerId) this.state.scores[roundWinnerId]=(this.state.scores[roundWinnerId]??0)+1; if(!this.state.suddenDeath) this.state.normalRound++; if((roundWinnerId&&(this.state.scores[roundWinnerId]??0)>=this.rules.winningScore)||(this.state.suddenDeath&&roundWinnerId)) this.finish(roundWinnerId); else if(!this.state.suddenDeath&&this.state.normalRound>=this.rules.maximumRounds) { const [a,b]=this.state.players; const scoreA=this.state.scores[a]??0, scoreB=this.state.scores[b]??0; if(scoreA!==scoreB) this.finish(scoreA>scoreB?a:b); else {this.state.suddenDeath=true;this.state.phase="SUDDEN_DEATH";} } return {roundWinnerId,finished:this.state.winnerId!==null,suddenDeath:this.state.suddenDeath}; }
-  snapshotFor(playerId:string) { this.assertPlayer(playerId); return {phase:this.state.phase,pool:this.state.suggestions.length?this.state.suggestions:this.state.pool.slice(0,6),searchable_clubs:this.state.pool,selections:this.state.phase==="TEAM_SELECTION"?{[playerId]:this.state.selections.get(playerId)??null}:Object.fromEntries(this.state.selections),confirmed:[...this.state.confirmed].includes(playerId),scores:this.state.scores,normalRound:this.state.normalRound,suddenDeath:this.state.suddenDeath,deadline:this.state.deadline,winnerId:this.state.winnerId}; }
+  snapshotFor(playerId:string) {
+    this.assertPlayer(playerId);
+    const ranked = [...this.state.submissions.values()]
+      .filter(submission => submission.correct)
+      .sort((a,b) => a.sequence-b.sequence);
+    const roundWinnerId = ranked[0]?.playerId ?? null;
+    const marginMs = ranked.length >= 2
+      ? Math.max(0, ranked[1]!.receivedAt-ranked[0]!.receivedAt)
+      : null;
+    const winReason = ranked.length >= 2
+      ? "FIRST_CORRECT"
+      : ranked.length === 1
+        ? "ONLY_CORRECT"
+        : "NO_CORRECT";
+    const reveal = this.state.phase === "REVEAL" || this.state.phase === "SUDDEN_DEATH"
+      ? {
+          submissions: [...this.state.submissions.values()].map(
+            ({playerId,raw,correct,receivedAt,sequence}) => ({
+              player_id:playerId,
+              answer:raw,
+              correct,
+              received_at_ms:receivedAt,
+              sequence,
+            }),
+          ),
+          round_winner_id:roundWinnerId,
+          scores:this.state.scores,
+          margin_ms:marginMs,
+          win_reason:winReason,
+          reveal_deadline:this.state.deadline,
+          sudden_death:this.state.suddenDeath,
+        }
+      : undefined;
+    const result = this.state.phase === "FINISHED"
+      ? {winner_id:this.state.winnerId,sudden_death:this.state.suddenDeath}
+      : undefined;
+    return {
+      phase:this.state.phase,
+      pool:this.state.suggestions.length?this.state.suggestions:this.state.pool.slice(0,6),
+      searchable_clubs:this.state.pool,
+      selections:this.state.phase==="TEAM_SELECTION"
+        ? {[playerId]:this.state.selections.get(playerId)??null}
+        : Object.fromEntries(this.state.selections),
+      confirmed:[...this.state.confirmed].includes(playerId),
+      scores:this.state.scores,
+      normalRound:this.state.normalRound,
+      suddenDeath:this.state.suddenDeath,
+      deadline:this.state.deadline,
+      winnerId:this.state.winnerId,
+      rules:{
+        winning_score:this.rules.winningScore,
+        maximum_rounds:this.rules.maximumRounds,
+      },
+      ...(reveal?{reveal}:{}),
+      ...(result?{result}:{}),
+    };
+  }
   private invalid(reason:string) { this.state.phase="TEAM_SELECTION"; this.state.selections.clear();this.state.confirmed.clear();return {valid:false,reason}; }
   private finish(id:string) {this.state.winnerId=id;this.state.phase="FINISHED";}
   private assertPhase(p:MatchPhase){if(this.state.phase!==p)throw new Error(`INVALID_PHASE:${this.state.phase}`)}

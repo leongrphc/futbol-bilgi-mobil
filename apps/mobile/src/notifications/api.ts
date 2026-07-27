@@ -1,6 +1,13 @@
 import { supabase } from "@/auth/supabase";
 
-export type AppNotificationType = "FRIEND_REQUEST" | "FRIEND_ACCEPTED" | "FRIEND_MATCH_INVITE" | "REMATCH_OFFER";
+export type AppNotificationType =
+  | "FRIEND_REQUEST"
+  | "FRIEND_ACCEPTED"
+  | "FRIEND_MATCH_INVITE"
+  | "REMATCH_OFFER"
+  | "STREAK_REMINDER"
+  | "WEEKLY_REWARD_READY"
+  | "TOURNAMENT_INVITE";
 export type AppNotification = {
   id: string;
   type: AppNotificationType;
@@ -34,6 +41,9 @@ function type(value: string): AppNotificationType | null {
     || value === "FRIEND_ACCEPTED"
     || value === "FRIEND_MATCH_INVITE"
     || value === "REMATCH_OFFER"
+    || value === "STREAK_REMINDER"
+    || value === "WEEKLY_REWARD_READY"
+    || value === "TOURNAMENT_INVITE"
     ? value
     : null;
 }

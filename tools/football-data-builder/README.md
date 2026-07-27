@@ -8,7 +8,7 @@ Football Link mobil oyunu için binlerce tarihî ve güncel oyuncu–takım ili�
 
 Ana hedefler:
 
-- 131 seçili kulüp
+- 190 seçili kulüp
 - 1990–2026 tarihî kariyerler
 - 2026 güncel kadrolar
 - En az 5.000 benzersiz gerçek futbolcu
@@ -137,7 +137,7 @@ Bot şu işlemleri yapar:
 1. `Category:<Club> players` kategorisinin bütün futbolcu sayfalarını listeler.
 2. Sayfaları tek tek değil, toplu API çağrılarıyla indirir.
 3. `Infobox football biography` içindeki `years1`, `clubs1`, `years2`, `clubs2` alanlarını ayrıştırır.
-4. Ana takım kariyerlerini seçili 131 kulüple eşleştirir.
+4. Ana takım kariyerlerini seçili 190 kulüple eşleştirir.
 5. Aynı oyuncuyu Wikidata QID veya Wikipedia page ID ile birleştirir.
 6. Ana oyun adını ve tam adı alias tablosuna ekler.
 7. Kaynak sayfası, revizyon ID'si ve kanıt güven puanını saklar.
@@ -172,6 +172,8 @@ python cli.py sync-transfers `
 ## Aşama 5 — Kanıt ve takım çiftleri
 
 ```powershell
+python cli.py backfill-wikidata-evidence --verify
+
 python cli.py auto-verify-evidence `
   --min-confidence 70 `
   --min-sources 1
@@ -180,6 +182,12 @@ python cli.py build-pairs
 python cli.py collection-report
 python cli.py export --format json --output exports/club_pairs.json
 ```
+
+`backfill-wikidata-evidence`, kanıtsız kalmış eski Wikidata üyeliklerine
+`source_evidence` kaydı yazar. Kanıt, üyelikle birlikte saklanan SPARQL
+payload'undan üretilir; internete çıkılmaz ve yeni ilişki uydurulmaz. Kanıt
+yazıldığı için bu üyelikler güven modelinde 70 puana ulaşır ve
+`auto-verify-evidence` tarafından doğrulanabilir.
 
 Tek komutla temel hattı çalıştırmak için:
 
@@ -238,7 +246,7 @@ V4 ilk sürümünde komut satırı toplama çalışır; tablo, kalıcı worker g
 
 # Neden bu sistem 5.000+ oyuncuya çıkar?
 
-131 kulübün her bir tarihî oyuncu kategorisinde onlarca veya yüzlerce futbolcu bulunur. Aynı oyuncular QID/page ID üzerinden birleştirildiğinden tekrar kayıt oluşmaz. Wikipedia kategorileri geniş tarihî keşif sağlarken, infobox kariyerleri oyuncunun diğer seçili takımlarını da aynı işlemde ortaya çıkarır.
+190 kulübün her bir tarihî oyuncu kategorisinde onlarca veya yüzlerce futbolcu bulunur. Aynı oyuncular QID/page ID üzerinden birleştirildiğinden tekrar kayıt oluşmaz. Wikipedia kategorileri geniş tarihî keşif sağlarken, infobox kariyerleri oyuncunun diğer seçili takımlarını da aynı işlemde ortaya çıkarır.
 
 Kesin sayı kaynak kapsamına bağlıdır. Sistem 5.000 hedefini garanti etmek için sahte veri oluşturmaz; gerçek import sonunda `collection-report` ile sayı ölçülür.
 
@@ -320,7 +328,7 @@ src/collector.py      Çok kaynaklı toplama ve kanıt sistemi
 src/current_sync.py   Güncel kadro senkronizasyonu
 src/db.py             SQLite şeması ve migration
 cli.py                Bütün komutlar
-config/clubs.json     131 kulüp
+config/clubs.json     190 kulüp
 config/manual_overrides.json
 exports/collection_report.json
 ```

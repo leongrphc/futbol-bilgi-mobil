@@ -22,7 +22,7 @@ rebuild_pair_stats(conn)
 
 st.set_page_config(page_title="Football Link Data Builder", page_icon="⚽", layout="wide")
 st.title("⚽ Football Link — Veri Builder v4")
-st.caption("131 kulüp; Wikidata + Wikipedia API + güncel kadro senkronizasyonu")
+st.caption("190 kulüp; Wikidata + Wikipedia API + güncel kadro senkronizasyonu")
 
 page = st.sidebar.radio(
     "Bölüm",

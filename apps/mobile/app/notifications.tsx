@@ -73,6 +73,17 @@ export default function NotificationsScreen() {
           router.replace({ pathname: "/match", params: { playerId: profile.id, matchId: item.roomKey } });
           return;
         }
+      } else if (item.type === "TOURNAMENT_INVITE" && item.entityId) {
+        const { error: actionError } = await supabase.rpc("tournament_respond", {
+          p_tournament_id: item.entityId,
+          p_accept: action === "ACCEPT",
+        });
+        if (actionError) throw actionError;
+        if (action === "ACCEPT") {
+          await markNotificationRead(item.id);
+          router.replace("/friends" as never);
+          return;
+        }
       } else if (item.type === "REMATCH_OFFER" && item.entityId) {
         const status = action === "ACCEPT" ? "ACCEPTED" : "DECLINED";
         const { error: actionError } = await supabase.from("rematch_offers").update({ status }).eq("id", item.entityId).eq("status", "PENDING");
@@ -98,6 +109,8 @@ export default function NotificationsScreen() {
 
   const openResolved = async (item: AppNotification) => {
     await markNotificationRead(item.id).catch(() => undefined);
+    if (item.type === "STREAK_REMINDER") { router.replace("/lobby" as never); return; }
+    if (item.type === "WEEKLY_REWARD_READY" || item.type === "TOURNAMENT_INVITE") { router.replace("/friends" as never); return; }
     if (item.actorId) router.push({ pathname: "/player-card", params: { playerId: item.actorId } } as never);
   };
 
@@ -174,6 +187,9 @@ function notificationTitle(item: AppNotification): string {
   if (item.type === "FRIEND_REQUEST") return tr.notifications.friendRequest;
   if (item.type === "FRIEND_ACCEPTED") return tr.notifications.friendAccepted;
   if (item.type === "FRIEND_MATCH_INVITE") return tr.notifications.matchInvite;
+  if (item.type === "STREAK_REMINDER") return tr.notifications.streakReminder;
+  if (item.type === "WEEKLY_REWARD_READY") return tr.notifications.weeklyReward;
+  if (item.type === "TOURNAMENT_INVITE") return tr.notifications.tournamentInvite;
   return tr.notifications.rematch;
 }
 
@@ -181,6 +197,9 @@ function notificationBody(item: AppNotification): string {
   if (item.type === "FRIEND_REQUEST") return tr.notifications.friendRequestCopy(item.actorName);
   if (item.type === "FRIEND_ACCEPTED") return tr.notifications.friendAcceptedCopy(item.actorName);
   if (item.type === "FRIEND_MATCH_INVITE") return tr.notifications.matchInviteCopy(item.actorName);
+  if (item.type === "STREAK_REMINDER") return tr.notifications.streakReminderCopy;
+  if (item.type === "WEEKLY_REWARD_READY") return tr.notifications.weeklyRewardCopy;
+  if (item.type === "TOURNAMENT_INVITE") return tr.notifications.tournamentInviteCopy(item.actorName);
   return tr.notifications.rematchCopy(item.actorName);
 }
 
@@ -188,6 +207,9 @@ function typeGlyph(type: AppNotification["type"]): string {
   if (type === "FRIEND_REQUEST") return "+";
   if (type === "FRIEND_ACCEPTED") return "✓";
   if (type === "FRIEND_MATCH_INVITE") return "↗";
+  if (type === "STREAK_REMINDER") return "⚡";
+  if (type === "WEEKLY_REWARD_READY") return "★";
+  if (type === "TOURNAMENT_INVITE") return "🏆";
   return "↻";
 }
 
@@ -208,11 +230,11 @@ const styles = StyleSheet.create({
   heading: { flex: 1 },
   kicker: { color: colors.primary, fontSize: 9, fontWeight: "900", letterSpacing: 1.6 },
   title: { color: colors.text, fontSize: 27, fontWeight: "900", marginTop: 3 },
-  pushCard: { minHeight: 82, padding: 14, borderRadius: 16, borderWidth: 1, borderColor: colors.accent, backgroundColor: "rgba(244,201,93,.07)", flexDirection: "row", alignItems: "center", gap: 12 },
+  pushCard: { minHeight: 82, padding: 14, borderRadius: 16, borderWidth: 1, borderColor: colors.accent, backgroundColor: "rgba(255,180,84,.07)", flexDirection: "row", alignItems: "center", gap: 12 },
   pushCardEnabled: { borderColor: colors.primary, backgroundColor: "rgba(89,213,166,.08)" },
   pushIcon: { width: 42, height: 48, borderRadius: 12, borderWidth: 1, borderColor: colors.accent, alignItems: "center", justifyContent: "center", backgroundColor: colors.surface },
   pushIconEnabled: { borderColor: colors.primary },
-  pushGlyph: { color: colors.text, fontSize: 18, fontWeight: "900" },
+  pushGlyph: { color: colors.text, fontSize: 17, fontWeight: "800", letterSpacing: -0.2 },
   pushCopy: { flex: 1 },
   pushTitle: { color: colors.text, fontSize: 13, fontWeight: "900" },
   pushNote: { color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 4 },
@@ -230,8 +252,8 @@ const styles = StyleSheet.create({
   notificationMain: { padding: 14, flexDirection: "row", gap: 12 },
   typeMark: { width: 42, height: 48, borderRadius: 12, borderWidth: 1, alignItems: "center", justifyContent: "center" },
   typeFriend: { borderColor: colors.primary, backgroundColor: "rgba(89,213,166,.10)" },
-  typeInvite: { borderColor: colors.accent, backgroundColor: "rgba(244,201,93,.10)" },
-  typeRematch: { borderColor: "#B896FF", backgroundColor: "rgba(184,150,255,.10)" },
+  typeInvite: { borderColor: colors.accent, backgroundColor: "rgba(255,180,84,.10)" },
+  typeRematch: { borderColor: colors.blitzSoft, backgroundColor: "rgba(184,150,255,.10)" },
   typeGlyph: { color: colors.text, fontSize: 19, fontWeight: "900" },
   notificationCopy: { flex: 1 },
   notificationTitle: { color: colors.text, fontWeight: "900", fontSize: 13 },

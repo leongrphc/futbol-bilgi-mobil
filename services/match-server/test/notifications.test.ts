@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { dispatchPushNotification, handleNotificationDispatch, notificationCopy, type NotificationEnv } from "../src/notifications";
+import { dispatchPushNotification, dueSystemSweeps, handleNotificationDispatch, notificationCopy, runSystemNotificationSweeps, type NotificationEnv } from "../src/notifications";
 
 const env: NotificationEnv = {
   SUPABASE_URL: "https://project.supabase.co",
@@ -70,5 +70,35 @@ describe("social push notifications", () => {
       token_id: "token-row",
       ticket_id: "expo-ticket",
     });
+  });
+});
+
+describe("system notification sweeps", () => {
+  it("gates each sweep to its own quarter-hour window in UTC", () => {
+    expect(dueSystemSweeps(new Date("2026-07-24T17:00:00Z"))).toEqual(["STREAK_REMINDERS"]);
+    expect(dueSystemSweeps(new Date("2026-07-24T17:14:59Z"))).toEqual(["STREAK_REMINDERS"]);
+    expect(dueSystemSweeps(new Date("2026-07-24T17:15:00Z"))).toEqual([]);
+    expect(dueSystemSweeps(new Date("2026-07-24T09:00:00Z"))).toEqual([]);
+    expect(dueSystemSweeps(new Date("2026-07-27T09:05:00Z"))).toEqual(["WEEKLY_REWARD_REMINDERS"]);
+    expect(dueSystemSweeps(new Date("2026-07-28T09:05:00Z"))).toEqual([]);
+  });
+
+  it("calls the matching service-role RPCs for due sweeps", async () => {
+    const fetchMock = vi.fn(async () => new Response("1", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await runSystemNotificationSweeps(env, new Date("2026-07-27T09:03:00Z"));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/rpc/system_enqueue_weekly_reward_reminders");
+
+    fetchMock.mockClear();
+    await runSystemNotificationSweeps(env, new Date("2026-07-27T12:00:00Z"));
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("has copy for the system notification types in both locales", () => {
+    expect(notificationCopy("STREAK_REMINDER", "Football Link", "tr").title).toBe("Serin bugün bitiyor");
+    expect(notificationCopy("WEEKLY_REWARD_READY", "Football Link", "en").title).toBe("Weekly league reward");
+    expect(notificationCopy("TOURNAMENT_INVITE", "Ali", "en").body).toContain("Ali");
   });
 });

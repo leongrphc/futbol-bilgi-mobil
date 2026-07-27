@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { router, useFocusEffect } from "expo-router";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { Alert, Animated, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "@/auth/auth-context";
@@ -109,6 +110,9 @@ export default function Competition() {
   const openOpponent = (item: History) => {
     router.push({ pathname: "/player-card", params: { playerId: item.opponent_id } } as never);
   };
+  const openSummary = (item: History) => {
+    router.push({ pathname: "/match-summary", params: { matchId: item.match_id } } as never);
+  };
   const formatFinishedAt = (value: string) => new Intl.DateTimeFormat(undefined, { day: "2-digit", month: "short" }).format(new Date(value));
   const formatDelta = (value: number) => value > 0 ? `+${value}` : value < 0 ? `−${Math.abs(value)}` : "0";
 
@@ -206,8 +210,8 @@ export default function Competition() {
             <View key={item.match_id} style={[styles.history, item.outcome === "WIN" ? styles.historyWin : styles.historyLoss]}>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={tr.competition.openPlayer(item.opponent_name)}
-                onPress={() => openOpponent(item)}
+                accessibilityLabel={tr.competition.openSummary(item.opponent_name)}
+                onPress={() => openSummary(item)}
                 style={({ pressed }) => [styles.historyMain, pressed && styles.pressed]}
               >
                 <View style={styles.historyIdentity}>
@@ -220,7 +224,7 @@ export default function Competition() {
                 </View>
                 <View style={styles.scoreBlock}>
                   <Text style={styles.matchScore}>{item.score_for}–{item.score_against}</Text>
-                  <Text style={styles.profileArrow}>›</Text>
+                  <Text style={styles.summaryHint}>{tr.competition.summary}</Text>
                 </View>
               </Pressable>
               <View style={styles.historyFooter}>
@@ -231,6 +235,15 @@ export default function Competition() {
                     </View>
                   )}
                 </View>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={tr.competition.openPlayer(item.opponent_name)}
+                  onPress={() => openOpponent(item)}
+                  style={({ pressed }) => [styles.historyProfile, pressed && styles.pressed]}
+                >
+                  <Ionicons name="person-outline" size={14} color={colors.muted} />
+                  <Text style={styles.historyProfileText}>{tr.competition.profile}</Text>
+                </Pressable>
                 {item.friend_state !== "SELF" && (
                   <Pressable
                     accessibilityRole="button"
@@ -243,7 +256,14 @@ export default function Competition() {
                 )}
               </View>
             </View>
-          )) : <Text style={styles.empty}>{tr.competition.noHistory}</Text>}
+          )) : (
+            <View style={styles.emptyBlock}>
+              <Text style={styles.emptyInBlock}>{tr.competition.noHistory}</Text>
+              <Pressable accessibilityRole="button" onPress={() => router.replace("/lobby" as never)} style={({ pressed }) => [styles.emptyCta, pressed && styles.pressed]}>
+                <Text style={styles.emptyCtaText}>{tr.competition.noHistoryCta} →</Text>
+              </Pressable>
+            </View>
+          )}
         </Section>
       </ScrollView>
     </SafeAreaView>
@@ -262,8 +282,8 @@ const styles = StyleSheet.create({
   tabs: { flexDirection: "row", backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 4, gap: 4 },
   tab: { flex: 1, minHeight: 44, borderRadius: 11, alignItems: "center", justifyContent: "center", paddingHorizontal: 8 },
   tabQuickActive: { backgroundColor: colors.primary },
-  tabBlitzActive: { backgroundColor: "#6B4DFF" },
-  tabRankedActive: { backgroundColor: "#F3C969" },
+  tabBlitzActive: { backgroundColor: colors.blitz },
+  tabRankedActive: { backgroundColor: colors.ranked },
   tabText: { color: colors.muted, fontSize: 11, fontWeight: "900", letterSpacing: 0.4, textAlign: "center" },
   tabTextQuickActive: { color: colors.ink },
   tabTextRankedActive: { color: colors.background },
@@ -272,31 +292,31 @@ const styles = StyleSheet.create({
   trophyValue: { color: colors.background, fontWeight: "900", fontSize: 48, lineHeight: 50 },
   trophyLabel: { color: colors.background, fontWeight: "900", fontSize: 10, letterSpacing: 1.5 },
   trophyNote: { color: colors.background, opacity: .75, marginTop: 12, fontSize: 12 },
-  blitzHero: { borderRadius: 16, padding: 18, backgroundColor: "#1A1028", borderWidth: 1, borderColor: "#6B4DFF" },
-  blitzHeroValue: { color: "#B896FF", fontWeight: "900", fontSize: 40, lineHeight: 42 },
-  blitzHeroLabel: { color: "#B896FF", fontWeight: "900", fontSize: 10, letterSpacing: 1.4, marginTop: 4 },
+  blitzHero: { borderRadius: 16, padding: 18, backgroundColor: colors.blitzDeep, borderWidth: 1, borderColor: colors.blitz },
+  blitzHeroValue: { color: colors.blitzSoft, fontWeight: "900", fontSize: 40, lineHeight: 42 },
+  blitzHeroLabel: { color: colors.blitzSoft, fontWeight: "900", fontSize: 10, letterSpacing: 1.4, marginTop: 4 },
   blitzHeroNote: { color: colors.muted, marginTop: 10, fontSize: 12 },
-  rankedHero: { borderRadius: 16, padding: 20, backgroundColor: "#241D16", borderWidth: 1, borderColor: "#8F7440" },
-  rankedHeroValue: { color: "#F3C969", fontWeight: "900", fontSize: 48, lineHeight: 50 },
-  rankedHeroLabel: { color: "#F3C969", fontWeight: "900", fontSize: 10, letterSpacing: 1.5 },
+  rankedHero: { borderRadius: 16, padding: 20, backgroundColor: colors.rankedDeep, borderWidth: 1, borderColor: "#8F7440" },
+  rankedHeroValue: { color: colors.ranked, fontWeight: "900", fontSize: 48, lineHeight: 50 },
+  rankedHeroLabel: { color: colors.ranked, fontWeight: "900", fontSize: 10, letterSpacing: 1.5 },
   rankedHeroNote: { color: "#C8BFAE", marginTop: 12, fontSize: 12 },
   section: { gap: 7 },
   sectionTitle: { color: colors.muted, fontWeight: "900", fontSize: 10, letterSpacing: 1.3 },
   rankRow: { flexDirection: "row", alignItems: "center", gap: 12, padding: 12, borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   blitzRow: { borderColor: "#3A2A66" },
   me: { borderColor: colors.accent },
-  blitzMe: { borderColor: "#B896FF" },
+  blitzMe: { borderColor: colors.blitzSoft },
   rankedRow: { borderColor: "#4B3C27" },
-  rankedMe: { borderColor: "#F3C969" },
+  rankedMe: { borderColor: colors.ranked },
   rank: { color: colors.accent, width: 20, fontWeight: "900", textAlign: "center" },
-  blitzRank: { color: "#B896FF" },
-  rankedRank: { color: "#F3C969" },
+  blitzRank: { color: colors.blitzSoft },
+  rankedRank: { color: colors.ranked },
   person: { flex: 1 },
   name: { color: colors.text, fontWeight: "900" },
   record: { color: colors.muted, fontSize: 11, marginTop: 2 },
   points: { color: colors.text, fontWeight: "900", fontSize: 18 },
-  blitzPoints: { color: "#B896FF" },
-  rankedPoints: { color: "#F3C969" },
+  blitzPoints: { color: colors.blitzSoft },
+  rankedPoints: { color: colors.ranked },
   history: { borderRadius: 14, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, overflow: "hidden" },
   historyWin: { borderLeftWidth: 3, borderLeftColor: colors.primary },
   historyLoss: { borderLeftWidth: 3, borderLeftColor: colors.danger },
@@ -305,9 +325,9 @@ const styles = StyleSheet.create({
   historyResultLine: { flexDirection: "row", alignItems: "center", gap: 8 },
   historyDate: { color: colors.muted, fontSize: 9, fontWeight: "700", textTransform: "uppercase" },
   opponentCode: { color: colors.muted, marginTop: 3, fontSize: 10, fontWeight: "700" },
-  profileArrow: { color: colors.muted, fontSize: 25, lineHeight: 26, fontWeight: "500" },
-  historyFooter: { minHeight: 48, borderTopWidth: 1, borderTopColor: colors.border, paddingHorizontal: 12, paddingVertical: 8, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
-  deltaSlot: { flex: 1, alignItems: "flex-start" },
+  summaryHint: { color: colors.accent, fontSize: 9, lineHeight: 12, fontWeight: "900", letterSpacing: .55, marginTop: 4 },
+  historyFooter: { minHeight: 48, borderTopWidth: 1, borderTopColor: colors.border, paddingHorizontal: 12, paddingVertical: 8, flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "flex-end", gap: 8 },
+  deltaSlot: { flex: 1, minWidth: 58, alignItems: "flex-start" },
   deltaChip: { borderRadius: 999, paddingHorizontal: 9, paddingVertical: 5, backgroundColor: colors.surfaceElevated },
   deltaPositive: { backgroundColor: "rgba(89,213,166,.12)" },
   deltaNegative: { backgroundColor: "rgba(255,113,108,.12)" },
@@ -315,7 +335,9 @@ const styles = StyleSheet.create({
   deltaText: { color: colors.muted, fontSize: 10, fontWeight: "900" },
   deltaTextPositive: { color: colors.primary },
   deltaTextNegative: { color: colors.danger },
-  historyAction: { minHeight: 32, justifyContent: "center", borderRadius: 9, paddingHorizontal: 11, backgroundColor: colors.primary },
+  historyProfile: { minHeight: 44, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, borderRadius: 9, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 9 },
+  historyProfileText: { color: colors.muted, fontSize: 9, fontWeight: "900" },
+  historyAction: { minHeight: 44, justifyContent: "center", borderRadius: 9, paddingHorizontal: 11, backgroundColor: colors.primary },
   historyActionText: { color: colors.background, fontSize: 10, fontWeight: "900" },
   historyInvite: { backgroundColor: "transparent", borderWidth: 1, borderColor: colors.accent },
   historyInviteText: { color: colors.accent },
@@ -327,6 +349,10 @@ const styles = StyleSheet.create({
   matchScore: { color: colors.text, fontSize: 20, fontWeight: "900" },
   mode: { color: colors.muted, fontSize: 10, marginTop: 3 },
   empty: { color: colors.muted, backgroundColor: colors.surface, borderRadius: 12, padding: 15 },
+  emptyBlock: { backgroundColor: colors.surface, borderRadius: 12, overflow: "hidden" },
+  emptyInBlock: { color: colors.muted, padding: 15, lineHeight: 19 },
+  emptyCta: { borderTopWidth: 1, borderTopColor: colors.border, minHeight: 46, alignItems: "center", justifyContent: "center" },
+  emptyCtaText: { color: colors.primary, fontSize: 12, fontWeight: "800" },
   disabled: { opacity: .42 },
   pressed: { opacity: .8, transform: [{ scale: .99 }] },
 });

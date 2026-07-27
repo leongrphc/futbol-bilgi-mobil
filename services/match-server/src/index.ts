@@ -6,14 +6,15 @@ import { applyMatchModeRules, createMatchData, loadLiveEventScope, type EventSco
 import { createMatchTicket, verifyMatchTicket, verifySupabaseAccessToken, type MatchTicketMode } from "./auth";
 import { resolveAnswerPayload, type AnswerChoice } from "./choices";
 import { isQueueAbuseStateExpired, queueCooldownRemaining, recordQueueCancellation, type QueueAbuseState } from "./queue-abuse";
+import { addQueueCancelFence, addQueueMatchReceipt, findQueueMatchReceipt, hasActiveQueueCancelFence, normalizeQueueRequestId, pruneQueueCancelFences, pruneQueueMatchReceipts, queueRequestIdsMatch, removeFencedQueueEntries, removeQueueEntriesForCancellation, shouldDeliverQueueAssignment, type QueueCancelFences, type QueueMatchReceipts } from "./queue-fence";
 import { rematchModeFromMatchId } from "./rematch-mode";
-import { checkPushReceipts, handleNotificationDispatch, type NotificationEnv } from "./notifications";
+import { checkPushReceipts, handleNotificationDispatch, runSystemNotificationSweeps, type NotificationEnv } from "./notifications";
 
 interface Env extends NotificationEnv { MATCH_ROOM: DurableObjectNamespace<MatchRoom>; MATCH_QUEUE: DurableObjectNamespace<MatchQueue>; MATCH_TOKEN_SECRET: string }
 type Pause = { phase: MatchPhase; remainingMs: number; disconnectedPlayer: string; deadline: number };
 type CompetitiveMatchMode = "QUICK" | "BLITZ" | "RANKED";
 type RoomMatchMode = CompetitiveMatchMode | "FRIEND" | "EVENT" | "BOT";
-type StoredRoom = { matchId: string; engine: SerializedEngineState; pause: Pause | null; dataVersionId: string; persistedRounds?: number; rematch?: { requester: string; matchId: string } | null; leagueFilter?: string | null; event?: EventScope | null; matchMode?: RoomMatchMode; answerChoices?: AnswerChoice[] };
+type StoredRoom = { matchId: string; engine: SerializedEngineState; pause: Pause | null; dataVersionId: string; persistedRounds?: number; rematch?: { requester: string; matchId: string } | null; leagueFilter?: string | null; event?: EventScope | null; matchMode?: RoomMatchMode; answerChoices?: AnswerChoice[]; playerCards?: Record<string, unknown>[] };
 const BOT_PLAYER_ID = "test-bot";
 const quickMessageIds = new Set<QuickMessageId>(["GOOD_LUCK", "NICE_ONE", "SO_CLOSE", "READY", "REMATCH"]);
 const freeEmoteIds = new Set<string>(FREE_EMOTE_IDS);
@@ -23,8 +24,11 @@ const EMOTE_COOLDOWN_MS = 1_500;
 
 type RegionClass = "TR" | "EU" | "OTHER";
 type QueueKind = "quick" | "blitz" | "ranked" | "event";
-type QueueEntry = { playerId: string; enqueuedAt: number; trophies: number; region: RegionClass };
+type QueueEntry = { playerId: string; enqueuedAt: number; trophies: number; region: RegionClass; requestId?: string };
+type QueueAssignment = string | { matchId: string; requestId?: string };
 const QUEUE_TTL_MS = 120_000;
+const QUEUE_CANCEL_FENCES_KEY = "queue_cancel_fences_v1";
+const QUEUE_MATCH_RECEIPTS_KEY = "queue_match_receipts_v1";
 const cupBand = (waitMs: number) => waitMs < 15_000 ? 50 : waitMs < 45_000 ? 100 : Number.POSITIVE_INFINITY;
 const withinBand = (a: number, b: number, band: number) => Math.abs(a - b) <= band;
 const normalizeRegion = (value: unknown): RegionClass => value === "TR" || value === "EU" ? value : "OTHER";
@@ -37,51 +41,132 @@ const queueStorageKeys = (kind: QueueKind) => {
   if (kind === "event") return { queueKey: "queue_event", assignKey: "assignments_event" };
   return { queueKey: "queue", assignKey: "assignments" };
 };
+const queueAssignmentMatchId = (assignment: QueueAssignment): string =>
+  typeof assignment === "string" ? assignment : assignment.matchId;
+const queueAssignmentRequestId = (assignment: QueueAssignment): string | undefined =>
+  typeof assignment === "string" ? undefined : assignment.requestId;
+const queueRecordsEqual = <T>(
+  stored: Record<string, T> | undefined,
+  normalized: Record<string, T>,
+  valuesEqual: (left: T, right: T) => boolean,
+): boolean => {
+  const storedEntries = Object.entries(stored ?? {});
+  if (storedEntries.length !== Object.keys(normalized).length) return false;
+  return storedEntries.every(([key, value]) =>
+    Object.prototype.hasOwnProperty.call(normalized, key)
+    && valuesEqual(value, normalized[key]!),
+  );
+};
 
 export class MatchQueue extends DurableObject<Env> {
   async fetch(request: Request): Promise<Response> {
-    const body = await request.json<{ action?: "join" | "cancel"; playerId?: string; trophies?: number; region?: string; queue?: string }>();
+    const body = await request.json<{ action?: "join" | "cancel" | "cleanup"; playerId?: string; trophies?: number; region?: string; queue?: string; request_id?: string }>();
     const playerId = body.playerId;
     if (!playerId) return Response.json({ error: "INVALID_PLAYER" }, { status: 400 });
+    const requestId = normalizeQueueRequestId(body.request_id);
+    if (body.request_id != null && !requestId) return Response.json({ error: "INVALID_REQUEST_ID" }, { status: 400 });
     const kind = normalizeQueueKind(body.queue);
     const now = Date.now();
     const { queueKey, assignKey } = queueStorageKeys(kind);
     const abuseKey = `queue_abuse:${playerId}`;
-    const queue = ((await this.ctx.storage.get<QueueEntry[]>(queueKey)) ?? []).filter(entry => now - entry.enqueuedAt < QUEUE_TTL_MS);
-    const assignments = (await this.ctx.storage.get<Record<string, string>>(assignKey)) ?? {};
+    const storedQueue = ((await this.ctx.storage.get<QueueEntry[]>(queueKey)) ?? []).filter(entry => now - entry.enqueuedAt < QUEUE_TTL_MS);
+    const assignments = (await this.ctx.storage.get<Record<string, QueueAssignment>>(assignKey)) ?? {};
+    const storedCancelFences = await this.ctx.storage.get<QueueCancelFences>(QUEUE_CANCEL_FENCES_KEY);
+    const storedMatchReceipts = await this.ctx.storage.get<QueueMatchReceipts>(QUEUE_MATCH_RECEIPTS_KEY);
+    let cancelFences = pruneQueueCancelFences(storedCancelFences, now);
+    let matchReceipts = pruneQueueMatchReceipts(storedMatchReceipts, now);
+    const bookkeepingWrites: Promise<unknown>[] = [];
+    if (!queueRecordsEqual(storedCancelFences, cancelFences, (left, right) => left === right)) {
+      bookkeepingWrites.push(Object.keys(cancelFences).length > 0
+        ? this.ctx.storage.put(QUEUE_CANCEL_FENCES_KEY, cancelFences)
+        : this.ctx.storage.delete(QUEUE_CANCEL_FENCES_KEY));
+    }
+    if (!queueRecordsEqual(
+      storedMatchReceipts,
+      matchReceipts,
+      (left, right) =>
+        left !== null
+        && typeof left === "object"
+        && left.matchId === right.matchId
+        && left.expiresAt === right.expiresAt,
+    )) {
+      bookkeepingWrites.push(Object.keys(matchReceipts).length > 0
+        ? this.ctx.storage.put(QUEUE_MATCH_RECEIPTS_KEY, matchReceipts)
+        : this.ctx.storage.delete(QUEUE_MATCH_RECEIPTS_KEY));
+    }
+    await Promise.all(bookkeepingWrites);
+    const queue = removeFencedQueueEntries(storedQueue, cancelFences, kind, now);
     let abuseState = await this.ctx.storage.get<QueueAbuseState>(abuseKey);
     if (isQueueAbuseStateExpired(abuseState, now)) {
       abuseState = undefined;
       await this.ctx.storage.delete(abuseKey);
     }
 
-    if (assignments[playerId]) {
-      const matchId = assignments[playerId]!;
+    const assignment = assignments[playerId];
+    if (assignment && shouldDeliverQueueAssignment(body.action, queueAssignmentRequestId(assignment), requestId)) {
+      const matchId = queueAssignmentMatchId(assignment);
       delete assignments[playerId];
-      await Promise.all([this.ctx.storage.put(assignKey, assignments), this.ctx.storage.delete(abuseKey)]);
-      return Response.json({ status: "MATCHED", match_id: matchId, mode: kind });
+      matchReceipts = addQueueMatchReceipt(matchReceipts, { kind, matchId, playerId, requestId, now });
+      await Promise.all([
+        this.ctx.storage.put(assignKey, assignments),
+        this.ctx.storage.put(QUEUE_MATCH_RECEIPTS_KEY, matchReceipts),
+        this.ctx.storage.delete(abuseKey),
+      ]);
+      return Response.json({ status: "MATCHED", match_id: matchId, mode: kind, request_id: requestId });
     }
 
-    if (body.action === "cancel") {
-      const wasQueued = queue.some(entry => entry.playerId === playerId);
-      const remaining = queue.filter(entry => entry.playerId !== playerId);
+    const committedMatchId = findQueueMatchReceipt(matchReceipts, { kind, playerId, requestId, now });
+    if (committedMatchId) {
+      await this.ctx.storage.delete(abuseKey);
+      return Response.json({ status: "MATCHED", match_id: committedMatchId, mode: kind, request_id: requestId });
+    }
+
+    const isCancellation = body.action === "cancel" || body.action === "cleanup";
+    if (!isCancellation && hasActiveQueueCancelFence(cancelFences, { kind, playerId, requestId, now })) {
+      return Response.json({ status: "CANCELLED", cooldown_ms: 0, mode: kind, request_id: requestId });
+    }
+
+    if (isCancellation) {
+      cancelFences = addQueueCancelFence(cancelFences, { kind, playerId, requestId, now });
+      const { wasQueued, remaining } = removeQueueEntriesForCancellation(queue, playerId, requestId);
+      if (body.action === "cleanup") {
+        await Promise.all([
+          this.ctx.storage.put(queueKey, remaining),
+          requestId ? this.ctx.storage.put(QUEUE_CANCEL_FENCES_KEY, cancelFences) : Promise.resolve(),
+        ]);
+        return Response.json({ status: "CANCELLED", cooldown_ms: 0, mode: kind, request_id: requestId });
+      }
       if (!wasQueued) {
-        await this.ctx.storage.put(queueKey, remaining);
-        return Response.json({ status: "CANCELLED", cooldown_ms: 0, cancel_count: abuseState?.cancelCount ?? 0, mode: kind });
+        await Promise.all([
+          this.ctx.storage.put(queueKey, remaining),
+          requestId ? this.ctx.storage.put(QUEUE_CANCEL_FENCES_KEY, cancelFences) : Promise.resolve(),
+        ]);
+        return Response.json({ status: "CANCELLED", cooldown_ms: 0, cancel_count: abuseState?.cancelCount ?? 0, mode: kind, request_id: requestId });
       }
       const cancellation = recordQueueCancellation(abuseState, now);
-      await Promise.all([this.ctx.storage.put(queueKey, remaining), this.ctx.storage.put(abuseKey, cancellation.state)]);
+      await Promise.all([
+        this.ctx.storage.put(queueKey, remaining),
+        this.ctx.storage.put(abuseKey, cancellation.state),
+        requestId ? this.ctx.storage.put(QUEUE_CANCEL_FENCES_KEY, cancelFences) : Promise.resolve(),
+      ]);
       return Response.json({
         status: "CANCELLED",
         cooldown_ms: cancellation.cooldownMs,
         cancel_count: cancellation.cancelCount,
         remaining_before_penalty: cancellation.remainingBeforePenalty,
         mode: kind,
+        request_id: requestId,
       });
     }
 
     const cooldownMs = queueCooldownRemaining(abuseState, now);
     if (cooldownMs > 0) {
+      cancelFences = addQueueCancelFence(cancelFences, { kind, playerId, requestId, now });
+      const { remaining } = removeQueueEntriesForCancellation(queue, playerId, requestId);
+      await Promise.all([
+        this.ctx.storage.put(queueKey, remaining),
+        requestId ? this.ctx.storage.put(QUEUE_CANCEL_FENCES_KEY, cancelFences) : Promise.resolve(),
+      ]);
       return Response.json({ status: "COOLDOWN", cooldown_ms: cooldownMs, mode: kind });
     }
 
@@ -119,24 +204,35 @@ export class MatchQueue extends DurableObject<Env> {
     }
 
     if (bestIndex < 0) {
-      const existing = queue.find(entry => entry.playerId === playerId);
+      const existing = queue.find(entry =>
+        entry.playerId === playerId && queueRequestIdsMatch(entry.requestId, requestId),
+      );
       const withoutSelf = queue.filter(entry => entry.playerId !== playerId);
-      withoutSelf.push({ playerId, enqueuedAt: existing?.enqueuedAt ?? now, trophies, region });
+      withoutSelf.push({ playerId, enqueuedAt: existing?.enqueuedAt ?? now, trophies, region, ...(requestId ? { requestId } : {}) });
       await this.ctx.storage.put(queueKey, withoutSelf);
-      return Response.json({ status: "WAITING", band: selfBand === Number.POSITIVE_INFINITY ? "GLOBAL" : selfBand, region, mode: kind });
+      return Response.json({ status: "WAITING", band: selfBand === Number.POSITIVE_INFINITY ? "GLOBAL" : selfBand, region, mode: kind, request_id: requestId });
     }
 
     const opponent = queue[bestIndex]!;
     const remaining = queue.filter((_, index) => index !== bestIndex).filter(entry => entry.playerId !== playerId);
     const matchId = `${kind}-${crypto.randomUUID()}`;
-    assignments[opponent.playerId] = matchId;
+    assignments[opponent.playerId] = { matchId, ...(opponent.requestId ? { requestId: opponent.requestId } : {}) };
+    matchReceipts = addQueueMatchReceipt(matchReceipts, { kind, matchId, playerId, requestId, now });
+    matchReceipts = addQueueMatchReceipt(matchReceipts, {
+      kind,
+      matchId,
+      playerId: opponent.playerId,
+      requestId: opponent.requestId,
+      now,
+    });
     await Promise.all([
       this.ctx.storage.put(queueKey, remaining),
       this.ctx.storage.put(assignKey, assignments),
+      this.ctx.storage.put(QUEUE_MATCH_RECEIPTS_KEY, matchReceipts),
       this.ctx.storage.delete(abuseKey),
       this.ctx.storage.delete(`queue_abuse:${opponent.playerId}`),
     ]);
-    return Response.json({ status: "MATCHED", match_id: matchId, mode: kind, matched_region: opponent.region === region ? region : "MIXED" });
+    return Response.json({ status: "MATCHED", match_id: matchId, mode: kind, matched_region: opponent.region === region ? region : "MIXED", request_id: requestId });
   }
 }
 
@@ -154,6 +250,8 @@ export class MatchRoom extends DurableObject<Env> {
   private eventScope: EventScope | null = null;
   private matchMode: RoomMatchMode = "FRIEND";
   private answerChoices: AnswerChoice[] = [];
+  private playerCards: Record<string, unknown>[] = [];
+  private playerCardsHydrated = false;
 
   async fetch(request: Request): Promise<Response> {
     await this.ensureLoaded();
@@ -202,10 +300,11 @@ export class MatchRoom extends DurableObject<Env> {
         this.matchMode === "BOT" ? "FRIEND" : this.matchMode,
       );
       this.engine.state.deadline = Date.now() + (blitzMatch ? 8_000 : rankedMatch ? 15_000 : 10_000);
-      const cards = wantsBot ? [] : await this.loadPlayerCards(this.engine.state.players);
+      this.playerCards = wantsBot ? [] : await this.loadPlayerCards(this.engine.state.players);
+      this.playerCardsHydrated = wantsBot || this.playerCards.length > 0;
       this.broadcast("READY_CHECK_STARTED", {
         deadline: this.engine.state.deadline,
-        player_cards: cards,
+        player_cards: this.playerCards,
         match_mode: this.matchMode,
         event: event ? { id: event.id, league: event.league, title_tr: event.title_tr, title_en: event.title_en, accent: event.accent } : null,
         rules: {
@@ -218,7 +317,7 @@ export class MatchRoom extends DurableObject<Env> {
     } else if (this.engine) {
       if (this.pause?.disconnectedPlayer === player) await this.resume(player);
       else {
-        this.send(pair[1], "PLAYER_RECONNECTED", this.engine.snapshotFor(player));
+        this.send(pair[1], "PLAYER_RECONNECTED", await this.reconnectSnapshotFor(player));
         if (this.engine.state.phase === "ANSWERING" && this.isChoiceMode()) this.sendAnswerPhaseTo(player);
         if (this.rematch) this.send(pair[1], player === this.rematch.requester ? "REMATCH_REQUESTED" : "REMATCH_OFFER", { match_id: this.rematch.matchId, mode: ticketModeForRoom(this.matchMode) });
       }
@@ -251,8 +350,9 @@ export class MatchRoom extends DurableObject<Env> {
     const engine = this.engine!, data = this.data!;
     switch (cmd.event_type) {
       case "READY_CONFIRM": if (engine.ready(player)) {
-        const cards = this.hasBot() ? [] : await this.loadPlayerCards(engine.state.players);
-        this.broadcast("MATCH_STARTED", { football_data_version_id: data.versionId, player_cards: cards, match_mode: this.matchMode });
+        this.playerCards = this.hasBot() ? [] : await this.loadPlayerCards(engine.state.players);
+        this.playerCardsHydrated = this.hasBot() || this.playerCards.length > 0;
+        this.broadcast("MATCH_STARTED", { football_data_version_id: data.versionId, player_cards: this.playerCards, match_mode: this.matchMode });
         await this.startSelection();
       } break;
       case "TEAM_SELECT": engine.select(player, String(cmd.payload.club_id)); break;
@@ -306,8 +406,17 @@ export class MatchRoom extends DurableObject<Env> {
         break;
       }
       case "RECONNECT": {
-        if (engine.state.phase === "READY_CHECK") this.sendTo(player, "READY_CHECK_STARTED", { deadline: engine.state.deadline ?? Date.now() + 10_000 });
-        else this.sendTo(player, "PLAYER_RECONNECTED", engine.snapshotFor(player));
+        const snapshot = await this.reconnectSnapshotFor(player);
+        if (engine.state.phase === "READY_CHECK") {
+          this.sendTo(player, "READY_CHECK_STARTED", {
+            deadline: engine.state.deadline ?? Date.now() + 10_000,
+            player_cards: snapshot.player_cards,
+            match_mode: snapshot.match_mode,
+            rules: snapshot.rules,
+          });
+        } else {
+          this.sendTo(player, "PLAYER_RECONNECTED", snapshot);
+        }
         break;
       }
       case "LEAVE_MATCH": await this.finishForfeit(player); break;
@@ -487,7 +596,20 @@ export class MatchRoom extends DurableObject<Env> {
     if (!response.ok) throw new Error("REMATCH_STATUS_UPDATE_FAILED");
   }
 
-  private async resume(_player: string): Promise<void> { const pause = this.pause!; this.pause = null; this.engine!.state.phase = pause.phase; this.engine!.state.deadline = Date.now() + pause.remainingMs; for (const player of this.engine!.state.players) { this.sendTo(player, "PLAYER_RECONNECTED", this.engine!.snapshotFor(player)); if (pause.phase === "ANSWERING" && this.isChoiceMode() && player !== BOT_PLAYER_ID) this.sendAnswerPhaseTo(player); } if (pause.remainingMs > 0) await this.ctx.storage.setAlarm(this.engine!.state.deadline); else await this.alarm(); }
+  private async resume(_player: string): Promise<void> {
+    const pause = this.pause!;
+    this.pause = null;
+    this.engine!.state.phase = pause.phase;
+    this.engine!.state.deadline = Date.now() + pause.remainingMs;
+    for (const player of this.engine!.state.players) {
+      this.sendTo(player, "PLAYER_RECONNECTED", await this.reconnectSnapshotFor(player));
+      if (pause.phase === "ANSWERING" && this.isChoiceMode() && player !== BOT_PLAYER_ID) {
+        this.sendAnswerPhaseTo(player);
+      }
+    }
+    if (pause.remainingMs > 0) await this.ctx.storage.setAlarm(this.engine!.state.deadline);
+    else await this.alarm();
+  }
   private async finishForfeit(leaver: string): Promise<void> { const winner = this.engine!.state.players.find(p => p !== leaver)!; this.pause = null; this.engine!.state.winnerId = winner; this.engine!.state.phase = "FINISHED"; this.engine!.state.deadline = null; if (!this.hasBot()) await this.data!.persistFinish(this.matchId, winner, this.engine!.state.scores); this.broadcast("MATCH_FINISHED", { winner_id: winner, forfeit: true }); }
   private async ensureLoaded(): Promise<void> {
     if (this.engine && this.data) return;
@@ -501,6 +623,8 @@ export class MatchRoom extends DurableObject<Env> {
       this.eventScope = stored.event ?? null;
       this.matchMode = stored.matchMode ?? (stored.matchId.startsWith("blitz-") ? "BLITZ" : stored.matchId.startsWith("ranked-") ? "RANKED" : stored.matchId.startsWith("quick-") ? "QUICK" : "FRIEND");
       this.answerChoices = stored.answerChoices ?? [];
+      this.playerCards = stored.playerCards ?? [];
+      this.playerCardsHydrated = this.hasBot() || (stored.playerCards?.length ?? 0) > 0;
     }
     if (!this.data && this.env.SUPABASE_URL && this.env.SUPABASE_SERVICE_ROLE_KEY) {
       const restoreOpts: { requestedVersion?: string; leagueFilter?: string | null; event?: EventScope | null } = {
@@ -530,7 +654,25 @@ export class MatchRoom extends DurableObject<Env> {
       event: this.eventScope ?? this.data.event,
       matchMode: this.matchMode,
       answerChoices: this.answerChoices,
+      playerCards: this.playerCards,
     } satisfies StoredRoom);
+  }
+  private async reconnectSnapshotFor(player: string) {
+    if (!this.playerCardsHydrated) {
+      this.playerCards = this.hasBot() ? [] : await this.loadPlayerCards(this.engine!.state.players);
+      this.playerCardsHydrated = true;
+    }
+    const snapshot = this.engine!.snapshotFor(player);
+    return {
+      ...snapshot,
+      player_cards: this.playerCards,
+      match_mode: this.matchMode,
+      rules: {
+        ...snapshot.rules,
+        answer_ms: this.data!.rules.answerMs,
+        selection_ms: this.data!.rules.selectionMs,
+      },
+    };
   }
   private async loadPlayerCards(playerIds: string[]): Promise<Record<string, unknown>[]> {
     try {
@@ -589,24 +731,59 @@ export default { async fetch(request: Request, env: Env): Promise<Response> {
       const bearer = request.headers.get("Authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
       if (!bearer) return Response.json({ error: "UNAUTHORIZED" }, { status: 401, headers: corsHeaders });
       const playerId = await verifySupabaseAccessToken(bearer, env);
-      const body = await request.json<{ action?: "join" | "cancel"; region?: string }>();
-      const queueKind: QueueKind = url.pathname === "/blitz-match" ? "blitz" : url.pathname === "/ranked-match" ? "ranked" : url.pathname === "/event-match" ? "event" : "quick";
-      if (queueKind === "event" && body.action !== "cancel") {
-        const live = await loadLiveEventScope(env);
-        if (!live) return Response.json({ status: "NO_EVENT", mode: "event" }, { headers: corsHeaders });
+      const body = await request.json<{ action?: "join" | "cancel"; region?: string; request_id?: string }>();
+      const requestId = normalizeQueueRequestId(body.request_id);
+      if (body.request_id != null && !requestId) {
+        return Response.json({ error: "INVALID_REQUEST_ID" }, { status: 400, headers: corsHeaders });
       }
-      if (queueKind === "ranked" && body.action !== "cancel") {
+      const queueKind: QueueKind = url.pathname === "/blitz-match" ? "blitz" : url.pathname === "/ranked-match" ? "ranked" : url.pathname === "/event-match" ? "event" : "quick";
+      const externalAction = body.action === "cancel" ? "cancel" : "join";
+      const queue = env.MATCH_QUEUE.get(env.MATCH_QUEUE.idFromName("global"));
+      const cleanupBeforeTerminal = async (terminal: Record<string, unknown>): Promise<Response> => {
+        try {
+          const cleanupResponse = await queue.fetch(new Request("https://queue/", {
+            method: "POST",
+            body: JSON.stringify({
+              action: "cleanup",
+              playerId,
+              queue: queueKind,
+              request_id: requestId,
+            }),
+            headers: { "Content-Type": "application/json" },
+          }));
+          if (!cleanupResponse.ok) {
+            return new Response(cleanupResponse.body, {
+              status: cleanupResponse.status,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+          const cleanupResult = await cleanupResponse.json<{ status?: string; match_id?: string }>();
+          if (cleanupResult.status === "MATCHED" && cleanupResult.match_id) {
+            return Response.json(cleanupResult, { headers: corsHeaders });
+          }
+          return Response.json(terminal, { headers: corsHeaders });
+        } catch {
+          return Response.json({ error: "QUEUE_CLEANUP_FAILED" }, { status: 503, headers: corsHeaders });
+        }
+      };
+      if (queueKind === "event" && externalAction !== "cancel") {
+        const live = await loadLiveEventScope(env);
+        if (!live) return cleanupBeforeTerminal({ status: "NO_EVENT", mode: "event" });
+      }
+      if (queueKind === "ranked" && externalAction !== "cancel") {
         const unlockedResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/ranked_player_unlocked`, {
           method: "POST",
           headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/json" },
           body: JSON.stringify({ p_player_id: playerId }),
         });
         const unlocked = unlockedResponse.ok && await unlockedResponse.json() === true;
-        if (!unlocked) return Response.json({ status: "RANKED_LOCKED", required_quick_matches: 5, mode: "ranked" }, { headers: corsHeaders });
+        if (!unlocked) {
+          return cleanupBeforeTerminal({ status: "RANKED_LOCKED", required_quick_matches: 5, mode: "ranked" });
+        }
       }
       // Trophies come from DB, never the client. Each competitive mode has its own ladder.
       let trophies = 0;
-      if (body.action !== "cancel" && queueKind !== "event" && env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY) {
+      if (externalAction !== "cancel" && queueKind !== "event" && env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY) {
         try {
           const select = queueKind === "blitz" ? "blitz_trophies" : queueKind === "ranked" ? "ranked_trophies" : "trophies";
           const profileResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/profiles?id=eq.${playerId}&select=${select}`, {
@@ -619,15 +796,15 @@ export default { async fetch(request: Request, env: Env): Promise<Response> {
           }
         } catch { /* queue still works with 0 trophies fallback */ }
       }
-      const queue = env.MATCH_QUEUE.get(env.MATCH_QUEUE.idFromName("global"));
       const response = await queue.fetch(new Request("https://queue/", {
         method: "POST",
         body: JSON.stringify({
-          action: body.action === "cancel" ? "cancel" : "join",
+          action: externalAction,
           playerId,
           trophies,
           region: body.region,
           queue: queueKind,
+          request_id: requestId,
         }),
         headers: { "Content-Type": "application/json" },
       }));
@@ -638,4 +815,5 @@ export default { async fetch(request: Request, env: Env): Promise<Response> {
   const id = env.MATCH_ROOM.idFromName(url.pathname.split("/").pop()!); return env.MATCH_ROOM.get(id).fetch(request);
 }, async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
   ctx.waitUntil(checkPushReceipts(env));
+  ctx.waitUntil(runSystemNotificationSweeps(env, new Date(_controller.scheduledTime)));
 } };

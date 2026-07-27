@@ -11,6 +11,8 @@ coverage/
 *.log
 __pycache__/
 *.py[cod]
+.pytest_cache/
+.venv/
 *.db
 *.db-journal
 supabase/.temp/

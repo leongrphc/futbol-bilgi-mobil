@@ -29,6 +29,7 @@ from src.wikidata import WikidataClient
 from src.wikipedia import WikipediaClient
 from src.collector import (
     auto_verify_by_evidence,
+    backfill_wikidata_evidence,
     collection_report,
     import_wikipedia_club_category,
     resolve_wikipedia_category,
@@ -673,6 +674,17 @@ def command_auto_verify_evidence(args: argparse.Namespace) -> None:
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
+def command_backfill_wikidata_evidence(args: argparse.Namespace) -> None:
+    conn = connect(db_path(args.db))
+    init_db(conn)
+    result = backfill_wikidata_evidence(conn)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    if args.verify:
+        verified = auto_verify_by_evidence(conn, min_confidence=70, min_sources=1)
+        rebuild_pairs(conn)
+        print(json.dumps(verified, ensure_ascii=False, indent=2))
+
+
 def command_collection_report(args: argparse.Namespace) -> None:
     conn = connect(db_path(args.db))
     init_db(conn)
@@ -725,6 +737,7 @@ def command_collect_scale(args: argparse.Namespace) -> None:
     else:
         print("4/5 API-Football atlandı (anahtar yok veya --skip-api-football).")
 
+    backfill_wikidata_evidence(conn)
     auto_verify_by_evidence(conn, min_confidence=70, min_sources=1)
     rebuild_pairs(conn)
     report = collection_report(conn)
@@ -869,6 +882,17 @@ def parser() -> argparse.ArgumentParser:
     sub.add_argument("--min-confidence", type=int, default=70)
     sub.add_argument("--min-sources", type=int, default=1)
     sub.set_defaults(func=command_auto_verify_evidence)
+
+    sub = subs.add_parser(
+        "backfill-wikidata-evidence",
+        help="Kanıtsız Wikidata üyeliklerine source_evidence yaz (internet gerekmez)",
+    )
+    sub.add_argument(
+        "--verify",
+        action="store_true",
+        help="Kanıt yazıldıktan sonra auto-verify ve çift matrisini yenile",
+    )
+    sub.set_defaults(func=command_backfill_wikidata_evidence)
 
     sub = subs.add_parser("collection-report", help="Kaynak bazlı veri toplama kapsam raporu üret")
     sub.add_argument("--output", default=str(ROOT / "exports" / "collection_report.json"))

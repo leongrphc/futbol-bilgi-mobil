@@ -13,6 +13,7 @@ export interface PublicPlayerCard {
   form: Array<"W" | "L">;
   friendshipState: FriendshipState;
   achievements: ShowcaseAchievement[];
+  h2h: { wins: number; losses: number } | null;
 }
 
 const emptyCard: PublicPlayerCard = {
@@ -26,6 +27,7 @@ const emptyCard: PublicPlayerCard = {
   form: [],
   friendshipState: "NONE",
   achievements: [],
+  h2h: null,
 };
 
 function record(value: unknown): Record<string, unknown> {
@@ -78,6 +80,9 @@ export async function loadPublicPlayerCard(playerId: string): Promise<{ card: Pu
       form: Array.isArray(row.form) ? row.form.filter((item): item is "W" | "L" => item === "W" || item === "L") : [],
       friendshipState: friendshipState(row.friendship_state),
       achievements: parseAchievements(row.achievements),
+      h2h: row.h2h && typeof row.h2h === "object"
+        ? { wins: number(record(row.h2h).wins), losses: number(record(row.h2h).losses) }
+        : null,
     },
   };
 }

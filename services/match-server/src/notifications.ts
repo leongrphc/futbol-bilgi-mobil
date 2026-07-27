@@ -5,7 +5,14 @@ export interface NotificationEnv {
   EXPO_ACCESS_TOKEN?: string;
 }
 
-type NotificationType = "FRIEND_REQUEST" | "FRIEND_ACCEPTED" | "FRIEND_MATCH_INVITE" | "REMATCH_OFFER";
+type NotificationType =
+  | "FRIEND_REQUEST"
+  | "FRIEND_ACCEPTED"
+  | "FRIEND_MATCH_INVITE"
+  | "REMATCH_OFFER"
+  | "STREAK_REMINDER"
+  | "WEEKLY_REWARD_READY"
+  | "TOURNAMENT_INVITE";
 type NotificationRecord = {
   id: string;
   recipient_id: string;
@@ -87,11 +94,17 @@ export function notificationCopy(type: NotificationType, actorName: string, loca
     if (type === "FRIEND_REQUEST") return { title: "New friend request", body: `${actorName} wants to add you as a friend.` };
     if (type === "FRIEND_ACCEPTED") return { title: "Friend request accepted", body: `${actorName} is now on your friends list.` };
     if (type === "FRIEND_MATCH_INVITE") return { title: "Match invitation", body: `${actorName} invited you to a friend match.` };
+    if (type === "STREAK_REMINDER") return { title: "Your streak ends today", body: "Check in and claim today's streak reward." };
+    if (type === "WEEKLY_REWARD_READY") return { title: "Weekly league reward", body: "You are last week's champion. 100 coins are waiting." };
+    if (type === "TOURNAMENT_INVITE") return { title: "Tournament invite", body: `${actorName} invited you to a 4-player tournament.` };
     return { title: "Rematch?", body: `${actorName} wants to play again.` };
   }
   if (type === "FRIEND_REQUEST") return { title: "Yeni arkadaşlık isteği", body: `${actorName} seni arkadaş olarak eklemek istiyor.` };
   if (type === "FRIEND_ACCEPTED") return { title: "Arkadaşlık isteği kabul edildi", body: `${actorName} artık arkadaş listende.` };
   if (type === "FRIEND_MATCH_INVITE") return { title: "Maç daveti", body: `${actorName} seni arkadaş maçına davet etti.` };
+  if (type === "STREAK_REMINDER") return { title: "Serin bugün bitiyor", body: "Girişini yap, bugünün seri ödülünü al." };
+  if (type === "WEEKLY_REWARD_READY") return { title: "Haftalık lig ödülü", body: "Geçen haftanın şampiyonusun. 100 coin seni bekliyor." };
+  if (type === "TOURNAMENT_INVITE") return { title: "Turnuva daveti", body: `${actorName} seni 4 kişilik turnuvaya davet etti.` };
   return { title: "Rövanş?", body: `${actorName} yeniden oynamak istiyor.` };
 }
 
@@ -217,6 +230,36 @@ export async function handleNotificationDispatch(request: Request, env: Notifica
     return Response.json({ status });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "PUSH_DISPATCH_FAILED" }, { status: 500 });
+  }
+}
+
+export type SystemSweep = "STREAK_REMINDERS" | "WEEKLY_REWARD_REMINDERS";
+
+// Cron fires every 15 minutes; each sweep owns one quarter-hour window so it
+// runs exactly once per day (or week) regardless of restarts, because the
+// enqueue RPCs are idempotent per source_key.
+export function dueSystemSweeps(now: Date): SystemSweep[] {
+  const sweeps: SystemSweep[] = [];
+  const hour = now.getUTCHours();
+  const minute = now.getUTCMinutes();
+  if (hour === 17 && minute < 15) sweeps.push("STREAK_REMINDERS");
+  if (now.getUTCDay() === 1 && hour === 9 && minute < 15) sweeps.push("WEEKLY_REWARD_REMINDERS");
+  return sweeps;
+}
+
+async function callServiceRpc(env: NotificationEnv, name: string): Promise<void> {
+  const response = await fetch(restUrl(env, `rpc/${name}`), {
+    method: "POST",
+    headers: serviceHeaders(env, { "Content-Type": "application/json" }),
+    body: "{}",
+  });
+  if (!response.ok) throw new Error(`SUPABASE_RPC_${name}_${response.status}`);
+}
+
+export async function runSystemNotificationSweeps(env: NotificationEnv, now: Date): Promise<void> {
+  for (const sweep of dueSystemSweeps(now)) {
+    if (sweep === "STREAK_REMINDERS") await callServiceRpc(env, "system_enqueue_streak_reminders");
+    else await callServiceRpc(env, "system_enqueue_weekly_reward_reminders");
   }
 }
 

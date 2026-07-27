@@ -6,6 +6,7 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 from typing import Any
 
+from .collector import WIKIDATA_MEMBERSHIP_CONFIDENCE, insert_wikidata_evidence
 from .db import insert_aliases, rebuild_pair_stats
 from .normalize import normalize_name
 from .wikidata import WikidataClient
@@ -160,23 +161,49 @@ def import_club(
                 normalize_name,
                 accepted=auto_accept_aliases,
             )
+            start_date = _date_only(item.start_date)
+            end_date = _date_only(item.end_date)
             conn.execute(
                 """
                 INSERT INTO memberships(
                     player_id, club_id, start_date, end_date,
                     membership_type, squad_level, source, status, source_payload,
-                    is_current, last_seen_at
-                ) VALUES (?, ?, ?, ?, 'UNKNOWN', 'FIRST_TEAM', 'WIKIDATA', 'IMPORTED', ?, ?, CURRENT_TIMESTAMP)
-                ON CONFLICT DO NOTHING
+                    confidence, is_current, last_seen_at
+                ) VALUES (?, ?, ?, ?, 'UNKNOWN', 'FIRST_TEAM', 'WIKIDATA', 'IMPORTED', ?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT DO UPDATE SET
+                    confidence=MAX(memberships.confidence, excluded.confidence),
+                    source_payload=excluded.source_payload,
+                    last_seen_at=CURRENT_TIMESTAMP,
+                    updated_at=CURRENT_TIMESTAMP
                 """,
                 (
                     player_id,
                     club_id,
-                    _date_only(item.start_date),
-                    _date_only(item.end_date),
+                    start_date,
+                    end_date,
                     json.dumps(asdict(item), ensure_ascii=False),
+                    WIKIDATA_MEMBERSHIP_CONFIDENCE,
                     int(item.end_date is None),
                 ),
+            )
+            membership_row = conn.execute(
+                """
+                SELECT id FROM memberships
+                WHERE player_id=? AND club_id=?
+                  AND COALESCE(start_date, '')=COALESCE(?, '')
+                  AND COALESCE(end_date, '')=COALESCE(?, '')
+                  AND source='WIKIDATA'
+                """,
+                (player_id, club_id, start_date, end_date),
+            ).fetchone()
+            insert_wikidata_evidence(
+                conn,
+                player_id=player_id,
+                club_id=club_id,
+                membership_id=int(membership_row["id"]) if membership_row else None,
+                player_qid=item.player_qid,
+                club_qid=club_qid,
+                payload=asdict(item),
             )
             imported += 1
 

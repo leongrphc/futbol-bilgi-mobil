@@ -110,6 +110,43 @@ Production doğrulama: `20260718122859_achievements_profile_showcase.sql` uygula
 
 İstatistikler tek authenticated RPC çağrısında, yalnızca `auth.uid()` sahibine ait sunucu kayıtlarından hesaplanır. Ham cevap ve alias verisi döndürülmez. `20260718191941_player_profile_stats.sql` production'a uygulandı ve migration geçmişine işlendi; gerçek authenticated kullanıcıyla canlı RPC smoke testi geçti. Mobil release ve cihaz görsel smoke testi bekliyor.
 
+## Phase 11 — Detaylı maç tutanağı (yerelde kodlandı)
+
+| ID | Özellik | Durum |
+|---|---|---|
+| M1 | Son Maçlar'dan açılan skor/rakip/mod özeti | ✅ Mobil akış + TR/EN |
+| M2 | Tur bazlı kulüp çifti ve puan akışı | ✅ Normal + ani ölüm tutanağı |
+| M3 | İki taraf için cevap verdi/doğru/son saniye durumu | ✅ Ham cevap metni açılmaz |
+| M4 | Geçmiş turdan Sonucu Bildir | ✅ Katılımcı doğrulamalı yazma + admin inceleme bağlamı |
+| M5 | Eski/eksik ve 50+ turlu maç dayanıklılığı | ✅ Boş/kısmi durum + parser testleri |
+
+Özet okuma, exposed şema dışında çalışan `SECURITY DEFINER` implementasyonu ve authenticated `SECURITY INVOKER` wrapper üzerinden yapılır. Yalnız bitmiş maçın iki katılımcısı erişebilir; yetkisiz ve bulunamayan maç aynı genel hatayı verir. `submissions` için istemci politikası açılmaz. Sonuç bildiriminin maç/tur, kulüp çifti, raporlayanın cevabı ve yeniden doğrulama bağlamı ayrı bir service-role RPC ile yalnız admin sunucusuna açılır; accepted alias listesi sözleşmeye girmez. Yeni tablo veya bağımlılık eklenmez. `20260726093404_competition_match_summary.sql` production'a uygulandı; iki hesaplı erişim ve cihaz smoke testi bekliyor.
+
+## Phase 12 — Haftalık Arkadaş Ligi (yerelde kodlandı)
+
+| ID | Özellik | Durum |
+|---|---|---|
+| L1 | Arkadaşlar sekmesinde haftalık lig kartı | ✅ Sıra, G/M ve haftalık kupa farkı; kendi satırı vurgulu |
+| L2 | Sunucu hesaplı haftalık delta | ✅ `matches.trophy_delta_*` toplamı; QUICK/BLITZ/RANKED, pazartesi (UTC) sıfırlanır |
+| L3 | Satırdan rakip profil kartına geçiş | ✅ `player-card` yönlendirmesi |
+| L4 | Boş/hata durumları | ✅ Arkadaşsız boş mesaj, yüklenemezse dokunarak yeniden dene |
+
+Kurallar: yalnız çağıran + ACCEPTED arkadaşlar döner; EVENT ve arkadaş maçı sayılmaz; yalnız toplamlar döner (cevap/maç kimliği açılmaz); istemci yazamaz. `20260726114500_friends_weekly_league.sql` production'a uygulandı ve gerçek hesapla canlı RPC smoke testi geçti; cihaz görsel smoke testi bekliyor.
+
+## Phase 13 — Engagement paketi (production'da)
+
+| ID | Özellik | Durum |
+|---|---|---|
+| K1 | Günlük giriş serisi | ✅ 7 günlük coin döngüsü (10→60), lobi kartı, UTC gün, ledger `LOGIN_STREAK` |
+| K2 | Haftalık lig şampiyon ödülü | ✅ Geçen haftanın 1.'sine +100 coin; `weekly_league_claims` + Friends kartı |
+| K3 | H2H rakip kartı | ✅ READY kartı ve oyuncu profili "Aranızda X-Y"; yalnız toplam W/L |
+| K4 | Kulüp ustalığı seviyeleri | ✅ 10/25/60 doğru → Bronz/Gümüş/Altın; profilde ilerleme çubuğu |
+| K5 | Albüm lig koleksiyonları | ✅ 6 lig hedefi, contract join'li ilerleme, `ALBUM_COLLECTION` ödülü |
+| K6 | Sistem push tetikleri | ✅ 17:00 UTC seri hatırlatması + Pazartesi 09:00 şampiyon hatırlatması; Worker cron + idempotent enqueue RPC |
+| K7 | Arkadaş turnuvası | ✅ 4 kişilik bracket; FRIEND odaları, `match_persist_finish` hook'u, şampiyona +150 coin, TOURNAMENT_INVITE bildirimi |
+
+Kurallar: bütün ödüller wallet ledger'dan geçer (unique player/reason/reference); istemci streak/claim/bracket tablolarına yazamaz; bracket oda anahtarı yalnız o maçın iki katılımcısına döner; turnuva maçları FRIEND modudur, kupa etkilemez. Migration'lar (`20260726150000`–`20260726154500`) production'da; rollback'li canlı RPC smoke zinciri geçti. Cihaz görsel smoke testi bekliyor.
+
 ## Asla (MVP / adalet)
 
 - Serbest sohbet, spectator, pay-for-answer, reveal-all-names IAP, ranked bot, ping compensation
