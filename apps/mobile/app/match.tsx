@@ -150,7 +150,7 @@ export default function Match() {
     if (!tutorialMode) return true;
     setTutorialCompletion("saving");
     try {
-      await markTutorialComplete(playerId);
+      await markTutorialComplete();
       await refreshProfile();
       setTutorialCompletion("complete");
       return true;
@@ -158,7 +158,7 @@ export default function Match() {
       setTutorialCompletion("error");
       return false;
     }
-  }, [playerId, refreshProfile, tutorialMode]);
+  }, [refreshProfile, tutorialMode]);
   useEffect(() => {
     if (state.phase === "FINISHED" && tutorialMode && tutorialCompletion === "idle") void completeTutorial();
   }, [completeTutorial, state.phase, tutorialCompletion, tutorialMode]);

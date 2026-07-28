@@ -759,6 +759,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      complete_tutorial: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      }
       monetization_status: {
         Args: Record<PropertyKey, never>
         Returns: {
